@@ -190,11 +190,17 @@ jobs:
       - name: An architecture with no images is refused
         run: |
           set -e
+          # Start from a clean dist/: an arch directory with no .img files in it
+          # must not become a release, and with nothing else present there is
+          # nothing to publish at all.
+          rm -rf dist
           mkdir -p dist/sketch-riscv64-userdebug
           if bash ./scripts/publish-release.sh v0.0-test --list > /tmp/empty.txt 2>&1; then
             echo "::error::publisher accepted a dist/ with no images"
             exit 1
           fi
+          cat /tmp/empty.txt
+          grep -q 'skipping sketch-riscv64-userdebug' /tmp/empty.txt
           grep -q 'no built architectures' /tmp/empty.txt
           echo "ok   refuses to publish an empty release"
           rm -rf dist
