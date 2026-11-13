@@ -164,6 +164,10 @@ jobs:
       - name: .deb runtime works with no image - build it and its userland
         run: |
           set -e
+          # debootstrap makes the Debian userland; dpkg-dev supplies dpkg-deb
+          # for the demo package. Neither is on the runner by default.
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq debootstrap dpkg-dev
           bash ./scripts/run-local.sh build
           sudo bash ./scripts/run-local.sh userland
           ls -la .local-run/base/*.tar.gz

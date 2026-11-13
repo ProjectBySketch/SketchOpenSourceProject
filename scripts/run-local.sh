@@ -89,6 +89,19 @@ cmd_userland() {
   command -v debootstrap >/dev/null 2>&1 \
     || die "debootstrap missing: sudo apt install debootstrap"
 
+  # Ubuntu's debootstrap may not carry a script for a very new Debian suite.
+  # Fall back to one it does know rather than failing halfway through.
+  if [ ! -e "/usr/share/debootstrap/scripts/$SUITE" ]; then
+    local fallback
+    for fallback in bookworm stable; do
+      if [ -e "/usr/share/debootstrap/scripts/$fallback" ]; then
+        log "debootstrap has no '$SUITE' script here, using '$fallback'"
+        SUITE="$fallback"
+        break
+      fi
+    done
+  fi
+
   as_root userland
 
   mkdir -p "$BASE"
@@ -129,7 +142,8 @@ cmd_demo() {
   local arch pkg deb
 
   need_bin
-  command -v dpkg-deb >/dev/null 2>&1 || die "dpkg-deb missing: sudo apt install dpkg-dev"
+  command -v dpkg-deb >/dev/null 2>&1 \
+    || die "dpkg-deb missing: sudo apt install dpkg-dev (it builds the demo package)"
   as_root demo
 
   arch="$(host_arch)"
