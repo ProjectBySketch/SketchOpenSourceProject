@@ -1,4 +1,5 @@
-// The daemon: a unix socket that runs one DebKit request per connection.
+// The daemon: a unix socket that runs one SketchOpenSourceProject request per
+// connection.
 //
 // Why it exists: the CLI needs root to chroot and mount, and `adb root` is not
 // always what you want. With the daemon running, `deb install x.deb` works from
@@ -9,7 +10,7 @@
 //   client -> server   NUL-separated argv, then NUL, then shutdown(WR)
 //   server -> client   the command's stdout and stderr, verbatim, followed by
 //                      one marker line carrying the exit code
-#include "debkit.h"
+#include "sketch.h"
 
 #include <errno.h>
 #include <fcntl.h>
@@ -25,15 +26,15 @@
 #include <cstdio>
 #include <cstdlib>
 
-namespace debkit {
+namespace sketch {
 
 namespace {
 
 // Starts with a control character so no command output can be mistaken for it.
-constexpr const char kExitMarker[] = "\x1eDEBKIT-EXIT:";
+constexpr char kExitMarker[] = "\x1eSKETCH-EXIT:";
 constexpr size_t kMarkerLen = sizeof(kExitMarker) - 1;
 
-std::string SocketPath() { return JoinPath(DefaultPaths().run, "debkitd.sock"); }
+std::string SocketPath() { return JoinPath(DefaultPaths().run, "sketchd.sock"); }
 
 void SendExitCode(int fd, int code) {
   std::string line = std::string("\n") + kExitMarker + std::to_string(code) + "\n";
@@ -108,7 +109,7 @@ int RunDaemon() {
   RootfsPaths p = DefaultPaths();
   std::string err;
   if (!EnsureDirs(p, err)) {
-    std::fprintf(stderr, "debkitd: %s\n", err.c_str());
+    std::fprintf(stderr, "sketchd: %s\n", err.c_str());
     return 1;
   }
 
@@ -125,7 +126,7 @@ int RunDaemon() {
   ::memset(&addr, 0, sizeof(addr));
   addr.sun_family = AF_UNIX;
   if (path.size() >= sizeof(addr.sun_path)) {
-    std::fprintf(stderr, "debkitd: socket path too long: %s\n", path.c_str());
+    std::fprintf(stderr, "sketchd: socket path too long: %s\n", path.c_str());
     ::close(server);
     return 1;
   }
@@ -154,7 +155,7 @@ int RunDaemon() {
 
   LogInfo("listening on " + path);
 
-  // Requests are served one at a time. dpkg in a single rootfs is not safe to
+  // Requests are served one at a time. dpkg in a single userland is not safe to
   // run concurrently anyway, and serialising means one request's chroot mounts
   // can never be torn down by another.
   while (!g_stop) {
@@ -241,4 +242,4 @@ bool CallDaemon(const std::vector<std::string>& argv, int& exit_code) {
   return true;
 }
 
-}  // namespace debkit
+}  // namespace sketch

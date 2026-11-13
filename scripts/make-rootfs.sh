@@ -1,21 +1,22 @@
 #!/usr/bin/env bash
 #
-# Builds the pristine Debian rootfs that DebKit unpacks into /data on first boot.
+# Builds the pristine Debian userland that SketchOpenSourceProject unpacks into
+# /data on first use.
 #
 #   scripts/make-rootfs.sh arm64 [repo-dir]
 #   scripts/make-rootfs.sh amd64 [repo-dir]
 #
-# Result: vendor/debkit/rootfs/prebuilt/rootfs-<arch>.tar.gz
+# Result: vendor/sketch/rootfs/prebuilt/rootfs-<arch>.tar.gz
 #
 set -euo pipefail
 
 ARCH="${1:-arm64}"
 REPO_DIR="${2:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
-SUITE="${DEBKIT_SUITE:-trixie}"
-MIRROR="${DEBKIT_MIRROR:-http://deb.debian.org/debian}"
-SECURITY_MIRROR="${DEBKIT_SECURITY_MIRROR:-http://security.debian.org/debian-security}"
-WORK="${DEBKIT_WORKDIR:-$REPO_DIR/.rootfs-build}"
-OUT="$REPO_DIR/vendor/debkit/rootfs/prebuilt"
+SUITE="${SKETCH_SUITE:-trixie}"
+MIRROR="${SKETCH_MIRROR:-http://deb.debian.org/debian}"
+SECURITY_MIRROR="${SKETCH_SECURITY_MIRROR:-http://security.debian.org/debian-security}"
+WORK="${SKETCH_WORKDIR:-$REPO_DIR/.rootfs-build}"
+OUT="$REPO_DIR/vendor/sketch/rootfs/prebuilt"
 
 case "$ARCH" in
   arm64) DEB_ARrm64; DEB_QEMU=aarch64 ;;
@@ -25,7 +26,7 @@ esac
 
 ROOT="$WORK/rootfs-$ARCH"
 
-log() { printf '\033[1;34m[debkit]\033[0m %s\n' "$*"; }
+log() { printf '\033[1;34m[sketch]\033[0m %s\n' "$*"; }
 
 SUDO=""
 if [ "$(id -u)" -ne 0 ]; then
@@ -55,7 +56,7 @@ $SUDO debootstrap --arch="$DEB_ARCH" --variant=minbase --components=main \
   --include=dpkg,apt,bash,coreutils,tar,gzip,xz-utils,zstd,ca-certificates \
   "$SUITE" "$ROOT" "$MIRROR"
 
-log "configuring the rootfs"
+log "configuring the userland"
 $SUDO cp /etc/resolv.conf "$ROOT/etc/resolv.conf"
 cat <<EOF | $SUDO tee "$ROOT/etc/apt/sources.list" >/dev/null
 deb $MIRROR $SUITE main
@@ -65,7 +66,7 @@ EOF
 
 # qemu-user-static carries the static emulators for every target, and the
 # kernel's binfmt_misc opens the interpreter inside the chroot, so it has to
-# live in the rootfs: this is what lets an arm64 image run amd64 .debs.
+# live in the userland: this is what lets an arm64 image run amd64 .debs.
 $SUDO chroot "$ROOT" /usr/bin/env -i \
   DEBIAN_FRONTEND=noninteractive PATH=/usr/sbin:/usr/bin:/sbin:/bin \
   /bin/bash -e -c '
@@ -78,9 +79,9 @@ mkdir -p dev proc sys tmp var/tmp usr/local/bin root
 chmod 1777 tmp var/tmp
 '
 
-echo "$DEB_ARCH" | $SUDO tee "$ROOT/etc/debkit-arch" >/dev/null
+echo "$DEB_ARCH" | $SUDO tee "$ROOT/etc/sketch-arch" >/dev/null
 
-# /dev, /proc and /sys are mounted by debkitd at run time; leave them empty.
+# /dev, /proc and /sys are mounted by sketchd at run time; leave them empty.
 for d in dev proc sys; do
   $SUDO find "$ROOT/$d" -mindepth 1 -maxdepth 1 -exec rm -rf {} + 2>/dev/null || true
 done
@@ -90,4 +91,4 @@ $SUDO tar --format=gnu -C "$ROOT" --numeric-owner -czf "$OUT/rootfs-$ARCH.tar.gz
 $SUDO chown "$(id -u):$(id -g)" "$OUT/rootfs-$ARCH.tar.gz"
 
 log "$OUT/rootfs-$ARCH.tar.gz ($(du -h "$OUT/rootfs-$ARCH.tar.gz" | cut -f1))"
-log "now: ./build.sh build $ARCH   (the tarball is embedded in /system_ext/debkit)"
+log "now: ./build.sh build $ARCH   (the tarball is embedded in /system_ext/sketch)"

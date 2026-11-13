@@ -1,11 +1,11 @@
-// DebKit shared declarations.
+// SketchOpenSourceProject shared declarations.
 //
 // Small on purpose: bionic, libstdc++ and nothing else, so the daemon builds in
-// any AOSP 16 tree without pulling in libbase or liblog.
+// any LineageOS 23 (Android 16) tree without pulling in libbase or liblog.
 //
-// Design note: DebKit does not reimplement dpkg. It owns the chroot, the mounts
+// Design note: this does not reimplement dpkg. It owns the chroot, the mounts
 // and the binfmt story, and hands package work to the dpkg that lives inside
-// the Debian rootfs - so gz, xz, zstd and bzip2 packages all work exactly as
+// the Debian userland - so gz, xz, zstd and bzip2 packages all work exactly as
 // Debian intends, and maintainer scripts run with a real shell.
 #pragma once
 
@@ -16,7 +16,7 @@
 #include <string>
 #include <vector>
 
-namespace debkit {
+namespace sketch {
 
 // ---------------------------------------------------------------- util.cpp --
 
@@ -73,12 +73,12 @@ void PrintArchStatus();
 // ---------------------------------------------------------------- rootfs.cpp -
 
 struct RootfsPaths {
-  std::string base;       // /data/debkit
-  std::string rootfs;     // /data/debkit/rootfs
-  std::string db;         // /data/debkit/db
-  std::string cache;      // /data/debkit/cache
-  std::string run;        // /data/debkit/run
-  std::string log;        // /data/debkit/log
+  std::string base;       // /data/sketch
+  std::string rootfs;     // /data/sketch/rootfs
+  std::string db;         // /data/sketch/db
+  std::string cache;      // /data/sketch/cache
+  std::string run;        // /data/sketch/run
+  std::string log;        // /data/sketch/log
 };
 
 RootfsPaths DefaultPaths();
@@ -87,9 +87,9 @@ bool EnsureDirs(const RootfsPaths& p, std::string& err);
 bool RootfsInstalled(const RootfsPaths& p);
 Machine RootfsMachine(const RootfsPaths& p);
 
-// Unpacks the Debian tarball into /data/debkit/rootfs. `from` may be empty, in
-// which case /system_ext/debkit/rootfs-<arch>.tar.gz is used, falling back to
-// /data/debkit/rootfs-<arch>.tar.gz (for a tarball pushed by hand).
+// Unpacks the Debian tarball into /data/sketch/rootfs. `from` may be empty, in
+// which case /system_ext/sketch/rootfs-<arch>.tar.gz is used, falling back to
+// /data/sketch/rootfs-<arch>.tar.gz (for a tarball pushed by hand).
 bool InstallRootfs(const RootfsPaths& p, const std::string& from, std::string& err);
 
 // Bind-mounts /dev, /dev/pts, /proc and /sys into the rootfs; unmounts them on
@@ -130,9 +130,10 @@ int CommandShell(const std::vector<std::string>& args);
 int CommandArch(const std::vector<std::string>& args);
 int CommandRootfs(const std::vector<std::string>& args);
 int CommandDebloat(const std::vector<std::string>& args);
+int CommandAbout(const std::vector<std::string>& args);
 int CommandHelp(const std::vector<std::string>& args);
 
 // Dispatches a verb (argv without the program name). -1 when it is unknown.
 int Dispatch(const std::vector<std::string>& argv);
 
-}  // namespace debkit
+}  // namespace sketch

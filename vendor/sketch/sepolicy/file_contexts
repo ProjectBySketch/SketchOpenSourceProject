@@ -1,0 +1,5 @@
+# /system_ext/bin/sketchd
+/system_ext/bin/sketchd    u:object_r:sketchd_exec:s0
+# The Debian tree lives in /data and is handled by the daemon from its own
+# domain, so no separate file type is needed yet.
+/system_ext/bin/deb        u:object_r:system_file:s0

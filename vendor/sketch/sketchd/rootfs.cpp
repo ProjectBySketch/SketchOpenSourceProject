@@ -1,10 +1,10 @@
-// The Debian rootfs: where it lives, how it gets unpacked, and how a command is
-// run inside it.
+// The Debian userland: where it lives, how it gets unpacked, and how a command
+// is run inside it.
 //
-// Everything here runs as root. debkitd is started by init from a oneshot
-// service, and the CLI refuses to work when it is not root, so there is no
-// privilege dance to get wrong.
-#include "debkit.h"
+// Everything here runs as root. sketchd is started by init from a service, and
+// the CLI refuses to work when it is not root, so there is no privilege dance
+// to get wrong.
+#include "sketch.h"
 
 #include <errno.h>
 #include <fcntl.h>
@@ -19,12 +19,12 @@
 #include <cstdio>
 #include <cstdlib>
 
-namespace debkit {
+namespace sketch {
 
 namespace {
 
-// Where the image keeps the rootfs tarball it was built with.
-constexpr const char* kSystemExtDir = "/system_ext/debkit";
+// Where the image keeps the userland tarball it was built with.
+constexpr const char* kSystemExtDir = "/system_ext/sketch";
 // toybox tar handles gzip and preserves ownership when run as root.
 constexpr const char* kTar = "/system/bin/tar";
 
@@ -51,7 +51,7 @@ bool BindMount(const std::string& source, const std::string& target, bool* mount
 
 RootfsPaths DefaultPaths() {
   RootfsPaths p;
-  p.base = "/data/debkit";
+  p.base = "/data/sketch";
   p.rootfs = JoinPath(p.base, "rootfs");
   p.db = JoinPath(p.base, "db");
   p.cache = JoinPath(p.base, "cache");
@@ -73,12 +73,12 @@ bool EnsureDirs(const RootfsPaths& p, std::string& err) {
 }
 
 bool RootfsInstalled(const RootfsPaths& p) {
-  return PathExists(JoinPath(p.rootfs, "etc/debkit-arch"));
+  return PathExists(JoinPath(p.rootfs, "etc/sketch-arch"));
 }
 
 Machine RootfsMachine(const RootfsPaths& p) {
   std::string s;
-  if (!ReadFile(JoinPath(p.rootfs, "etc/debkit-arch"), s)) return Machine::kUnknown;
+  if (!ReadFile(JoinPath(p.rootfs, "etc/sketch-arch"), s)) return Machine::kUnknown;
   return ParseMachine(Trim(s));
 }
 
@@ -100,10 +100,10 @@ bool InstallRootfs(const RootfsPaths& p, const std::string& from, std::string& e
       }
     }
     if (tarball.empty()) {
-      err = std::string("no rootfs tarball found; expected ") + kSystemExtDir +
+      err = std::string("no userland tarball found; expected ") + kSystemExtDir +
             "/rootfs-" + arch + ".tar.gz\n"
             "Build one with ./build.sh rootfs " + arch +
-            ", or push one to /data/debkit/rootfs-" + arch + ".tar.gz";
+            ", or push one to /data/sketch/rootfs-" + arch + ".tar.gz";
       return false;
     }
   }
@@ -125,7 +125,7 @@ bool InstallRootfs(const RootfsPaths& p, const std::string& from, std::string& e
   }
 
   if (!RootfsInstalled(p)) {
-    err = "the tarball did not contain etc/debkit-arch - is it a DebKit rootfs?";
+    err = "the tarball did not contain etc/sketch-arch - is it a Sketch userland?";
     return false;
   }
   return true;
@@ -134,7 +134,7 @@ bool InstallRootfs(const RootfsPaths& p, const std::string& from, std::string& e
 bool EnsureRootfs(const RootfsPaths& p, std::string& err) {
   if (!EnsureDirs(p, err)) return false;
   if (RootfsInstalled(p)) return true;
-  LogInfo("no rootfs yet, installing it (this takes a minute the first time)");
+  LogInfo("no userland yet, installing it (this takes a minute the first time)");
   return InstallRootfs(p, "", err);
 }
 
@@ -187,7 +187,7 @@ int RunInChroot(const RootfsPaths& p, const std::vector<std::string>& argv) {
   std::string err;
   ChrootMounts mounts;
   if (!mounts.Mount(p.rootfs, err)) {
-    std::fprintf(stderr, "debkitd: %s\n", err.c_str());
+    std::fprintf(stderr, "sketchd: %s\n", err.c_str());
     return 1;
   }
 
@@ -234,4 +234,4 @@ int RunInChroot(const RootfsPaths& p, const std::vector<std::string>& argv) {
   return 1;
 }
 
-}  // namespace debkit
+}  // namespace sketch

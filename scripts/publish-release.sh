@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
-# Publishes the files in dist/ as a GitHub release, so the built images, the
-# ISO and the binaries are downloadable from the repository page.
+# Publishes the files in dist/ as a GitHub release, so the built images, the ISO
+# and the binaries are downloadable from the repository page.
 #
 # Usage:  scripts/publish-release.sh <tag> [repo-dir]
 #   e.g.  scripts/publish-release.sh v1.0
@@ -9,7 +9,7 @@
 # Needs the GitHub CLI, signed in (gh auth login) or a token in GH_TOKEN.
 #
 # GitHub limits a release asset to 2 GiB. Anything larger is split into 1900 MiB
-# parts, which the release notes tell you how to join back together - AOSP's
+# parts, which the release notes tell you how to join back together - a
 # super.img is routinely bigger than the limit, so this is not optional.
 #
 set -euo pipefail
@@ -19,8 +19,8 @@ REPO_DIR="${2:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 DIST="$REPO_DIR/dist"
 LIMIT_MB=1900
 
-log() { printf '\033[1;34m[debkit]\033[0m %s\n' "$*"; }
-die() { printf '\033[1;31m[debkit]\033[0m %s\n' "$*" >&2; exit 1; }
+log() { printf '\033[1;34m[sketch]\033[0m %s\n' "$*"; }
+die() { printf '\033[1;31m[sketch]\033[0m %s\n' "$*" >&2; exit 1; }
 
 [ -n "$TAG" ] || die "usage: $0 <tag> [repo-dir]"
 [ -d "$DIST" ] || die "nothing in $DIST - run ./build.sh artifacts <arch> first"
@@ -31,16 +31,17 @@ NOTES="$(mktemp)"
 trap 'rm -f "$NOTES"' EXIT
 
 {
-  echo "DebKit: an AOSP 16 image that runs Debian \`.deb\` packages."
+  echo "**SketchOpenSourceProject** - a lightweight Android 16 build on LineageOS"
+  echo "(no Google apps) that installs and runs Debian \`.deb\` packages."
   echo
-  echo "Debloated, with dpkg inside a Debian chroot and cross-arch support"
-  echo "(arm64 images run amd64 packages and the reverse, through qemu-user)."
+  echo "Built for **arm64** and **amd64**. dpkg runs inside a Debian chroot, and"
+  echo "qemu-user makes the other architecture's packages work too."
   echo
   echo "### Downloads"
   echo
-  echo "- \`debkit-*-userdebug.zip\` - unzip, then \`fastboot flashall\`"
-  echo "- \`debkit-amd64.iso\` - bootable live medium for amd64"
-  echo "- \`bin/\` - the \`debkitd\` binary and the Debian rootfs tarball"
+  echo "- \`sketch-*-userdebug.zip\` - unzip, then \`fastboot flashall\`"
+  echo "- \`sketch-amd64.iso\` - bootable live medium for amd64"
+  echo "- \`bin/\` - the \`sketchd\` binary and the Debian userland tarball"
   echo "- \`SHA256SUMS\` - verify with \`sha256sum -c SHA256SUMS\`"
   echo
   echo "### On the device"
@@ -72,7 +73,7 @@ if gh release view "$TAG" >/dev/null 2>&1; then
   log "release $TAG exists, adding files"
 else
   log "creating release $TAG"
-  gh release create "$TAG" --title "DebKit $TAG" --notes-file "$NOTES"
+  gh release create "$TAG" --title "SketchOpenSourceProject $TAG" --notes-file "$NOTES"
 fi
 
 # ------------------------------------------------------------------- upload --

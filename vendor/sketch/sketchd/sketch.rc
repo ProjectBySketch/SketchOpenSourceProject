@@ -1,0 +1,31 @@
+# SketchOpenSourceProject: the .deb runtime.
+#
+# init creates the tree under /data before any service starts, then starts the
+# daemon once the system has booted. The daemon is the only thing that touches
+# /data/sketch, and everything it runs runs inside the Debian chroot.
+
+on post-fs-data
+    mkdir /data/sketch 0771 root system
+    mkdir /data/sketch/rootfs 0771 root system
+    mkdir /data/sketch/db 0771 root system
+    mkdir /data/sketch/cache 0771 root system
+    mkdir /data/sketch/run 0700 root root
+    mkdir /data/sketch/log 0771 root system
+    chmod 0700 /data/sketch/run
+    chown root root /data/sketch/run
+
+service sketchd /system_ext/bin/sketchd serve
+    class late_start
+    user root
+    group root system
+    seclabel u:r:sketchd:s0
+    disabled
+
+# Started once boot is complete: first boot is the slow one, and nothing needs
+# the daemon until someone installs a .deb. `setprop ro.sketch.autostart 0`
+# before boot keeps it off, in which case `deb` does its work in-process.
+on property:sys.boot_completed=1 && property:ro.sketch.autostart=1
+    start sketchd
+
+on property:ro.sketch.autostart=0
+    stop sketchd

@@ -1,5 +1,0 @@
-# /system_ext/bin/debkitd
-/system_ext/bin/debkitd    u:object_r:debkitd_exec:s0
-# The Debian tree is data, labelled as such; the daemon handles it from its own
-# domain, so no separate type is needed yet.
-/system_ext/bin/deb       u:object_r:system_file:s0

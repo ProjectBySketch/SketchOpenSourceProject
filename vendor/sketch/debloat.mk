@@ -1,16 +1,19 @@
-# DebKit debloat: strips the stock AOSP apps and first-run noise that a
-# lightweight image does not need.
+# SketchOpenSourceProject debloat pass.
+#
+# LineageOS already ships without any Google apps - that is most of the work
+# this file would otherwise have to do. What is left is the stock AOSP app set
+# and the first-run noise a lightweight image does not need.
 #
 # Included straight after the base product, so PRODUCT_PACKAGES already holds
 # everything inherited. filter-out is a no-op for names your tree does not have,
-# so a module that moved between AOSP releases cannot break the build - it just
-# does nothing. Check what is actually in the image with:
+# so a module that moved between releases cannot break the build - it just does
+# nothing. Check what is actually in the image with:
 #   ls out/target/product/*/system/app out/target/product/*/system/priv-app
 #
 # To keep a package, delete its line. To drop more, add its module name.
 
 # --- apps a lightweight image does not need --------------------------------
-DEBKIT_REMOVED_APPS := \
+SKETCH_REMOVED_APPS := \
     BasicDreams \
     BookmarkProvider \
     Browser2 \
@@ -46,13 +49,13 @@ DEBKIT_REMOVED_APPS := \
 
 # --- debug and bring-up tooling, gone from user builds ---------------------
 ifeq ($(TARGET_BUILD_VARIANT),user)
-DEBKIT_REMOVED_APPS += \
+SKETCH_REMOVED_APPS += \
     Development \
     SdkSetup \
     SimAppDialog
 endif
 
-PRODUCT_PACKAGES := $(filter-out $(DEBKIT_REMOVED_APPS),$(PRODUCT_PACKAGES))
+PRODUCT_PACKAGES := $(filter-out $(SKETCH_REMOVED_APPS),$(PRODUCT_PACKAGES))
 
 # --- telemetry and first-run noise off -------------------------------------
 PRODUCT_PRODUCT_PROPERTIES += \

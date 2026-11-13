@@ -1,18 +1,18 @@
 // Architecture detection and the cross-arch story.
 //
 // The kernel already knows how to hand an amd64 ELF to a qemu interpreter
-// through binfmt_misc (Android's kernel has CONFIG_BINFMT_MISC and the AOSP
-// 16 generic kernels register the `qemu-<arch>` handlers from the rootfs'
-// qemu-user-static). This file reports what the image can do and tells the
-// user what is missing when it cannot.
-#include "debkit.h"
+// through binfmt_misc (Android's kernel has CONFIG_BINFMT_MISC and the generic
+// kernels register the `qemu-<arch>` handlers from the userland's
+// qemu-user-static). This file reports what the image can do and tells the user
+// what is missing when it cannot.
+#include "sketch.h"
 
 #include <sys/utsname.h>
 
 #include <cstdio>
 #include <cstring>
 
-namespace debkit {
+namespace sketch {
 
 Machine HostMachine() {
   struct utsname u;
@@ -79,9 +79,10 @@ void PrintArchStatus() {
   RootfsPaths p = DefaultPaths();
   Machine rootfs = RootfsMachine(p);
 
+  std::printf("SketchOpenSourceProject\n");
   std::printf("host cpu          : %s\n", MachineName(host));
   std::printf("debian arch       : %s\n", DebianArch(host));
-  std::printf("rootfs            : %s (%s)\n", p.rootfs.c_str(),
+  std::printf("userland          : %s (%s)\n", p.rootfs.c_str(),
               RootfsInstalled(p) ? DebianArch(rootfs) : "not installed");
   std::printf("\n");
 
@@ -101,9 +102,9 @@ void PrintArchStatus() {
                 "than native. Install the native build of anything heavy.\n");
   } else {
     std::printf("\nNo cross-arch interpreter registered. Either run `deb rootfs init`\n"
-                "so qemu-user-static lands in the rootfs, or check that\n"
+                "so qemu-user-static lands in the userland, or check that\n"
                 "CONFIG_BINFMT_MISC is set in your kernel.\n");
   }
 }
 
-}  // namespace debkit
+}  // namespace sketch

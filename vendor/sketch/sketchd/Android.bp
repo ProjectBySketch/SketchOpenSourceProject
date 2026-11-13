@@ -1,15 +1,15 @@
-// DebKit daemon and CLI.
+// SketchOpenSourceProject daemon and CLI.
 //
 // One binary, three entry points (see main.cpp):
-//   debkitd serve   - the daemon init starts at boot, listening on a unix socket
+//   sketchd serve   - the daemon init starts at boot, listening on a unix socket
 //   deb <verb>      - the same binary under its second name, the CLI
-//   debkitd <verb>  - direct use, e.g. `su -c 'debkitd install x.deb'`
+//   sketchd <verb>  - direct use, e.g. `su -c 'sketchd install x.deb'`
 //
 // Deliberately dependency-free: bionic, libstdc++ and nothing else, so it builds
-// in any AOSP 16 tree without pulling in libbase or liblog.
+// in any LineageOS 23 (Android 16) tree without pulling in libbase or liblog.
 
 cc_binary {
-    name: "debkitd",
+    name: "sketchd",
     srcs: [
         "arch.cpp",
         "commands.cpp",
@@ -18,6 +18,8 @@ cc_binary {
         "rootfs.cpp",
         "util.cpp",
     ],
+    // sketch.h sits one level up, in vendor/sketch.
+    local_include_dirs: [".."],
     cflags: [
         "-Wall",
         "-Wextra",
@@ -29,7 +31,7 @@ cc_binary {
     // `deb` is the same binary: a symlink, so it is always executable and there
     // is only one copy of the code on the image.
     symlinks: ["deb"],
-    init_rc: ["debkit.rc"],
+    init_rc: ["sketch.rc"],
     strip: {
         none: true,
     },

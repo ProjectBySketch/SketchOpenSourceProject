@@ -1,5 +1,5 @@
 // The command implementations. Each one is the body of a `deb` subcommand.
-#include "debkit.h"
+#include "sketch.h"
 
 #include <errno.h>
 #include <fcntl.h>
@@ -11,7 +11,7 @@
 #include <cstdio>
 #include <cstdlib>
 
-namespace debkit {
+namespace sketch {
 
 namespace {
 
@@ -34,7 +34,7 @@ bool LooksLikeDeb(const std::string& path, std::string& err) {
 }
 
 // The package file has to be visible inside the chroot, so it is copied into
-// the rootfs' /var/tmp first and removed again afterwards.
+// the userland's /var/tmp first and removed again afterwards.
 class StagedDeb {
  public:
   StagedDeb() = default;
@@ -72,7 +72,7 @@ int RequireRoot() {
   return 0;
 }
 
-// dpkg's own database, read straight out of the rootfs. The read-only commands
+// dpkg's own database, read straight out of the userland. The read-only commands
 // use this when they are not root, so `deb list` works from an ordinary shell
 // without a chroot or a mount.
 std::vector<std::map<std::string, std::string>> ReadStatusDb(const RootfsPaths& p) {
@@ -115,7 +115,7 @@ std::string Field(const std::map<std::string, std::string>& stanza, const char* 
 }
 
 // Everything that runs a command in the chroot goes through here so the
-// "rootfs is missing" case has exactly one message.
+// "userland is missing" case has exactly one message.
 int InRootfs(const RootfsPaths& p, const std::vector<std::string>& argv) {
   std::string err;
   if (!EnsureRootfs(p, err)) {
@@ -134,7 +134,7 @@ void UsageInstall() {
 
 void Usage() {
   std::fprintf(stderr,
-               "deb - Debian .deb packages on this device\n\n"
+               "SketchOpenSourceProject - Debian .deb packages on this device\n\n"
                "  deb install [--extract] <file.deb>...\n"
                "  deb remove <package>...\n"
                "  deb list\n"
@@ -143,7 +143,8 @@ void Usage() {
                "  deb shell\n"
                "  deb arch\n"
                "  deb rootfs [init|status]\n"
-               "  deb debloat\n");
+               "  deb debloat\n"
+               "  deb about\n");
 }
 
 }  // namespace
@@ -184,7 +185,7 @@ int CommandInstall(const std::vector<std::string>& args) {
 
   RootfsPaths p = DefaultPaths();
   if (int rc = InRootfs(p, {"/bin/true"})) {
-    std::fprintf(stderr, "deb install: the rootfs is not usable\n");
+    std::fprintf(stderr, "deb install: the userland is not usable\n");
     return rc;
   }
 
@@ -235,7 +236,7 @@ int CommandRemove(const std::vector<std::string>& args) {
 int CommandList(const std::vector<std::string>& args) {
   RootfsPaths p = DefaultPaths();
   if (!RootfsInstalled(p)) {
-    std::printf("no Debian packages installed (rootfs not set up yet)\n");
+    std::printf("no Debian packages installed (userland not set up yet)\n");
     return 0;
   }
 
@@ -302,10 +303,10 @@ int CommandInfo(const std::vector<std::string>& args) {
   int rc = InRootfs(p, {"/usr/bin/dpkg-deb", "--info", staged.chroot_path()});
   if (rc == 0) {
     std::printf("\nfiles in this package:\n");
-    // sh -c with $1, so a package name with spaces still works.
+    // sh -c with $1, so a path with spaces still works.
     InRootfs(p, {"/bin/sh", "-c",
                  "/usr/bin/dpkg-deb --contents \"$1\" | wc -l",
-                 "deb-info", staged.chroot_path()});
+                 "sketch-info", staged.chroot_path()});
   }
   return rc;
 }
@@ -339,7 +340,7 @@ int CommandRootfs(const std::vector<std::string>& args) {
 
   if (sub == "status") {
     std::printf("base      : %s\n", p.base.c_str());
-    std::printf("rootfs    : %s (%s)\n", p.rootfs.c_str(),
+    std::printf("userland  : %s (%s)\n", p.rootfs.c_str(),
                 RootfsInstalled(p) ? "installed" : "not installed");
     if (RootfsInstalled(p)) {
       std::printf("arch      : %s\n", DebianArch(RootfsMachine(p)));
@@ -357,14 +358,14 @@ int CommandRootfs(const std::vector<std::string>& args) {
       return 1;
     }
     if (RootfsInstalled(p)) {
-      std::printf("rootfs already installed at %s\n", p.rootfs.c_str());
+      std::printf("userland already installed at %s\n", p.rootfs.c_str());
       return 0;
     }
     if (!InstallRootfs(p, args.size() > 1 ? args[1] : "", err)) {
       std::fprintf(stderr, "deb rootfs init: %s\n", err.c_str());
       return 1;
     }
-    std::printf("rootfs installed at %s (%s)\n", p.rootfs.c_str(),
+    std::printf("userland installed at %s (%s)\n", p.rootfs.c_str(),
                 DebianArch(RootfsMachine(p)));
     return 0;
   }
@@ -375,8 +376,10 @@ int CommandRootfs(const std::vector<std::string>& args) {
 
 int CommandDebloat(const std::vector<std::string>& args) {
   std::printf(
-      "This image was built from vendor/debkit/debloat.mk.\n\n"
-      "Not included, compared with a stock AOSP 16 build:\n"
+      "This image is a SketchOpenSourceProject build (vendor/sketch/debloat.mk).\n\n"
+      "The base is LineageOS 23, which ships with no Google apps at all - no\n"
+      "Play services, no Play Store, no GMS. On top of that, this build removes\n"
+      "the stock AOSP apps a lightweight image does not need:\n"
       "  apps      browser, calendar, camera, clock, email, music, print stack,\n"
       "            settings intelligence, quick search, wallpaper pickers, live\n"
       "            wallpapers, bookmarks provider, STK, WAPPush, Protips, Traceur\n"
@@ -384,8 +387,22 @@ int CommandDebloat(const std::vector<std::string>& args) {
       "  first run setup wizard disabled, checkin disabled, verify-only dexopt\n\n"
       "Check what is actually on the device:\n"
       "  ls /system/app /system/priv-app /system_ext/app\n"
-      "Put a package back by deleting its line in vendor/debkit/debloat.mk and\n"
-      "rebuilding. ro.debkit.debloat=1 marks the image.\n");
+      "Put a package back by deleting its line in vendor/sketch/debloat.mk and\n"
+      "rebuilding. ro.sketch.debloat=1 marks the image.\n");
+  return 0;
+}
+
+int CommandAbout(const std::vector<std::string>& args) {
+  std::printf(
+      "SketchOpenSourceProject\n"
+      "  a lightweight Android 16 build on LineageOS (no Google apps)\n"
+      "  that installs and runs Debian .deb packages\n\n"
+      "  base      LineageOS 23 (Android 16)\n"
+      "  runtime   dpkg inside a Debian chroot, qemu-user for cross-arch\n"
+      "  built for arm64 and amd64\n\n"
+      "  deb arch      what this image can run\n"
+      "  deb debloat   what was left out\n"
+      "  deb install   install a package\n");
   return 0;
 }
 
@@ -411,6 +428,7 @@ int Dispatch(const std::vector<std::string>& argv) {
   if (verb == "arch") return CommandArch(rest);
   if (verb == "rootfs") return CommandRootfs(rest);
   if (verb == "debloat") return CommandDebloat(rest);
+  if (verb == "about" || verb == "version") return CommandAbout(rest);
   if (verb == "help" || verb == "--help" || verb == "-h") return CommandHelp(rest);
 
   std::fprintf(stderr, "deb: unknown command '%s'\n\n", verb.c_str());
@@ -418,4 +436,4 @@ int Dispatch(const std::vector<std::string>& argv) {
   return 2;
 }
 
-}  // namespace debkit
+}  // namespace sketch

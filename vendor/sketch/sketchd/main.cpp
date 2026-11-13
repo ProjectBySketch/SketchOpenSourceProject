@@ -1,11 +1,11 @@
-// debkitd entry point.
+// sketchd entry point.
 //
-//   debkitd serve             init starts this; serves /data/debkit/run/debkitd.sock
-//   debkitd cli <verb> ...    explicit CLI mode
-//   debkitd <verb> ...        direct use, e.g. su -c 'debkitd install x.deb'
-//   deb <verb> ...            the same binary, installed under a second name
-//                             (Android.bp `symlinks`), which is the friendly CLI
-#include "debkit.h"
+//   sketchd serve             init starts this; serves /data/sketch/run/sketchd.sock
+//   sketchd cli <verb> ...    explicit CLI mode
+//   sketchd <verb> ...        direct use, e.g. su -c 'sketchd install x.deb'
+//   deb <verb> ...            the same binary under a second name (Android.bp
+//                             `symlinks`), which is the friendly CLI
+#include "sketch.h"
 
 #include <unistd.h>
 
@@ -13,7 +13,7 @@
 #include <string>
 #include <vector>
 
-using namespace debkit;
+using namespace sketch;
 
 namespace {
 
@@ -43,7 +43,7 @@ int main(int argc, char** argv) {
   for (int i = 1; i < argc; ++i) args.emplace_back(argv[i]);
 
   // Called as `deb`? Then it is the CLI whatever the first argument is.
-  const std::string self = argc > 0 ? BaseName(argv[0]) : "debkitd";
+  const std::string self = argc > 0 ? BaseName(argv[0]) : "sketchd";
   if (self == "deb") return RunCli(args);
 
   if (!args.empty() && args[0] == "serve") return RunDaemon();
@@ -55,4 +55,3 @@ int main(int argc, char** argv) {
 
   return Dispatch(args);
 }
-

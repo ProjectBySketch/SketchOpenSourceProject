@@ -1,0 +1,56 @@
+# SketchOpenSourceProject daemon domain.
+#
+# sketchd installs packages and then executes arbitrary binaries from them
+# inside a chroot, which is the whole point of the image - so this domain is
+# permissive while the policy is being written. It is a bring-up policy: it
+# keeps user builds booting, but it does not confine anything yet. Drop
+# `permissive sketchd` once the allow rules below cover a real session without
+# denials (adb logcat | grep avc, or `audit2allow`).
+
+type sketchd, domain;
+type sketchd_exec, exec_type, file_type, system_file_type;
+
+init_daemon_domain(sketchd)
+
+# A chroot needs these, and the packages it runs need the rest.
+allow sketchd self:capability {
+    chown
+    dac_override
+    dac_read_search
+    fowner
+    fsetid
+    kill
+    mknod
+    net_admin
+    net_raw
+    setgid
+    setuid
+    sys_admin
+    sys_chroot
+};
+allow sketchd self:process { fork transition setcurrent setsched sigchld };
+allow sketchd self:unix_stream_socket { create bind listen accept connect read write getattr getopt setopt shutdown };
+allow sketchd sketchd_exec:file { read open getattr map execute execute_no_trans entrypoint };
+
+# /data/sketch: the rootfs, the package database and the socket.
+allow sketchd system_data_file:dir { create read write open getattr setattr search add_name remove_name rename rmdir };
+allow sketchd system_data_file:file { create read write open getattr setattr unlink rename append map execute execute_no_trans };
+allow sketchd system_data_file:sock_file { create read write open getattr setattr unlink };
+
+# Mounts for the chroot and the device nodes bound into it.
+allow sketchd fs_type:filesystem { mount remount unmount };
+allow sketchd tmpfs:dir { create read write open getattr setattr search add_name remove_name rmdir };
+allow sketchd tmpfs:file { create read write open getattr setattr unlink };
+allow sketchd devpts:chr_file { read write open getattr ioctl };
+allow sketchd device:dir { read open getattr search };
+allow sketchd dev_type:chr_file { read write open getattr ioctl };
+allow sketchd proc:dir { read open getattr search };
+allow sketchd proc:file { read open getattr write };
+allow sketchd proc_net:file { read open getattr };
+allow sketchd proc_sys_fs:dir { read open getattr search };
+
+# binfmt_misc, which is what makes the other architecture work.
+allow sketchd binfmt_misc_fs:dir { read write open getattr search add_name };
+allow sketchd binfmt_misc_fs:file { create read write open getattr unlink };
+
+permissive sketchd;

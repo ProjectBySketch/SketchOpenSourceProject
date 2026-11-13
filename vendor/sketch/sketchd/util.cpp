@@ -1,5 +1,5 @@
-// Small helpers: paths, files, string trimming. No logging framework, no libbase.
-#include "debkit.h"
+// Small helpers: paths, files, processes, string trimming. No libbase, no liblog.
+#include "sketch.h"
 
 #include <errno.h>
 #include <fcntl.h>
@@ -11,7 +11,7 @@
 
 #include <cstdio>
 
-namespace debkit {
+namespace sketch {
 
 bool WriteAll(int fd, const std::string& data) {
   size_t off = 0;
@@ -54,12 +54,12 @@ bool ReadFile(const std::string& path, std::string& out) {
 }
 
 void LogErrno(const std::string& msg) {
-  std::fprintf(stderr, "debkitd: %s: %s\n", msg.c_str(), strerror(errno));
+  std::fprintf(stderr, "sketchd: %s: %s\n", msg.c_str(), strerror(errno));
   std::fflush(stderr);
 }
 
 void LogInfo(const std::string& msg) {
-  std::fprintf(stderr, "debkitd: %s\n", msg.c_str());
+  std::fprintf(stderr, "sketchd: %s\n", msg.c_str());
   std::fflush(stderr);
 }
 
@@ -268,4 +268,4 @@ bool CopyFile(const std::string& from, const std::string& to, std::string& err) 
   return ok;
 }
 
-}  // namespace debkit
+}  // namespace sketch

@@ -1,13 +1,14 @@
 name: build
 
-# Builds DebKit on a Linux machine with the AOSP tree and publishes the images,
-# the ISO and the binaries as a release. Nothing is built on GitHub's hosted
-# runners: an AOSP 16 build needs ~400 GiB of disk and hours of CPU, which the
-# hosted machines do not have.
+# Builds SketchOpenSourceProject on a Linux machine with the LineageOS tree and
+# publishes the images, the ISO and the binaries as a release.
+#
+# Nothing is built on GitHub's hosted runners: even a LineageOS build needs more
+# disk and hours than a hosted machine has, and the tree has to be synced once.
 #
 # Register a self-hosted runner on your build machine with these labels:
 #   ./config.sh --labels self-hosted,linux,aosp
-# and keep the AOSP tree at $AOSP_DIR (default ~/aosp) on it.
+# and keep the LineageOS tree at $AOSP_DIR (default ~/lineage) on it.
 
 on:
   workflow_dispatch:
@@ -22,7 +23,7 @@ on:
         type: boolean
         default: false
       tag:
-        description: "Release tag (blank: debkit-<run number>)"
+        description: "Release tag (blank: sketch-<run number>)"
         type: string
         default: ""
   push:
@@ -30,7 +31,7 @@ on:
       - "v*"
 
 concurrency:
-  group: debkit-${{ github.ref }}
+  group: sketch-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -43,7 +44,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: Host check
         run: ./build.sh env
-      - name: Sync AOSP
+      - name: Sync LineageOS
         run: ./build.sh sync
 
   build:
@@ -56,7 +57,7 @@ jobs:
         arch: [arm64, amd64]
     steps:
       - uses: actions/checkout@v4
-      - name: Debian rootfs
+      - name: Debian userland
         run: ./build.sh rootfs ${{ matrix.arch }}
       - name: Build ${{ matrix.arch }}
         env:
@@ -67,7 +68,7 @@ jobs:
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: debkit-${{ matrix.arch }}
+          name: sketch-${{ matrix.arch }}
           path: dist/
           retention-days: 14
 
@@ -84,5 +85,5 @@ jobs:
       - name: Publish release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: ${{ github.event.inputs.tag || format('debkit-{0}', github.run_number) }}
+          TAG: ${{ github.event.inputs.tag || format('sketch-{0}', github.run_number) }}
         run: ./scripts/publish-release.sh "$TAG"

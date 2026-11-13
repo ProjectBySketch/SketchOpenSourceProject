@@ -2,34 +2,34 @@
 #
 # Collects everything a build produced into dist/, ready to publish:
 #
-#   dist/debkit-<arch>-<variant>/
-#       *.img                 every image the build made (system, boot, ...)
-#       bin/debkitd           the .deb runtime binary
+#   dist/sketch-<arch>-<variant>/
+#       *.img                      every image the build made (system, boot, ...)
+#       bin/sketchd                the .deb runtime binary
 #       bin/rootfs-<arch>.tar.gz   the Debian userland it unpacks
-#       debkit-<arch>-<variant>.zip    flashable bundle (fastboot)
-#       debkit-<arch>.iso     bootable live medium (amd64 only)
-#       manifest.txt          what this is, and what went into it
-#       SHA256SUMS            for verifying a download
+#       sketch-<arch>-<variant>.zip    flashable bundle (fastboot)
+#       sketch-<arch>.iso          bootable live medium (amd64 only)
+#       manifest.txt               what this is, and what went into it
+#       SHA256SUMS                 for verifying a download
 #
 # Usage:  scripts/make-artifacts.sh <arm64|amd64> [variant] [repo-dir]
-#   AOSP_DIR   where the AOSP tree is   (default $HOME/aosp)
+#   AOSP_DIR   where the LineageOS tree is   (default $HOME/lineage)
 #
 set -euo pipefail
 
 ARCH="${1:-arm64}"
 VARIANT="${2:-userdebug}"
 REPO_DIR="${3:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
-AOSP_DIR="${AOSP_DIR:-$HOME/aosp}"
+AOSP_DIR="${AOSP_DIR:-$HOME/lineage}"
 
-log() { printf '\033[1;34m[debkit]\033[0m %s\n' "$*"; }
-die() { printf '\033[1;31m[debkit]\033[0m %s\n' "$*" >&2; exit 1; }
+log() { printf '\033[1;34m[sketch]\033[0m %s\n' "$*"; }
+die() { printf '\033[1;31m[sketch]\033[0m %s\n' "$*" >&2; exit 1; }
 
 case "$ARCH" in
   arm64|amd64) ;;
   *) die "usage: $0 <arm64|amd64> [variant] [repo-dir]" ;;
 esac
 
-DIST="$REPO_DIR/dist/debkit-$ARCH-$VARIANT"
+DIST="$REPO_DIR/dist/sketch-$ARCH-$VARIANT"
 
 # ---------------------------------------------------------------- find out/ --
 # TARGET_DEVICE decides the product directory (generic_arm64, generic_x86_64,
@@ -64,24 +64,24 @@ done
 log "collected $copied images"
 
 # ------------------------------------------------------------- the binaries --
-if [ -f "$OUT_DIR/system_ext/bin/debkitd" ]; then
-  cp -f "$OUT_DIR/system_ext/bin/debkitd" "$DIST/bin/debkitd"
-  log "collected debkitd"
+if [ -f "$OUT_DIR/system_ext/bin/sketchd" ]; then
+  cp -f "$OUT_DIR/system_ext/bin/sketchd" "$DIST/bin/sketchd"
+  log "collected sketchd"
 else
-  log "warning: $OUT_DIR/system_ext/bin/debkitd is missing (is debkitd in PRODUCT_PACKAGES?)"
+  log "warning: $OUT_DIR/system_ext/bin/sketchd is missing (is sketchd in PRODUCT_PACKAGES?)"
 fi
 
-for tarball in "$REPO_DIR"/vendor/debkit/rootfs/prebuilt/rootfs-*.tar.gz; do
+for tarball in "$REPO_DIR"/vendor/sketch/rootfs/prebuilt/rootfs-*.tar.gz; do
   [ -f "$tarball" ] || continue
   cp -f "$tarball" "$DIST/bin/"
   log "collected $(basename "$tarball")"
 done
 
 # ------------------------------------------------------ the flashable bundle --
-# Same shape as an AOSP *-img-*.zip: unzip and `fastboot flash` each image.
+# Same shape as a LineageOS *-img-*.zip: unzip and `fastboot flash` each image.
 if command -v zip >/dev/null 2>&1; then
-  ( cd "$DIST" && zip -q -r "debkit-$ARCH-$VARIANT.zip" ./*.img )
-  log "flashable bundle: debkit-$ARCH-$VARIANT.zip"
+  ( cd "$DIST" && zip -q -r "sketch-$ARCH-$VARIANT.zip" ./*.img )
+  log "flashable bundle: sketch-$ARCH-$VARIANT.zip"
 else
   log "warning: zip missing, no flashable bundle (sudo apt install zip)"
 fi
@@ -89,41 +89,41 @@ fi
 # ------------------------------------------------------------- the live ISO --
 # amd64 only, and only when the ISO tools are installed. This is a live medium
 # assembled from the images the build made, in the same way Android-x86 does it:
-# a GRUB menu boots the kernel with the goldfish x86_64 command line and the
-# initrd mounts system.img from the ISO.
+# a GRUB menu boots the kernel with the x86_64 command line and the initrd
+# mounts system.img from the ISO.
 if [ "$ARCH" = "amd64" ]; then
   if command -v grub-mkrescue >/dev/null 2>&1 && command -v xorriso >/dev/null 2>&1; then
     if [ -f "$DIST/kernel" ] && [ -f "$DIST/ramdisk.img" ] && [ -f "$DIST/system.img" ]; then
       ISO_ROOT="$(mktemp -d)"
-      mkdir -p "$ISO_ROOT/boot/grub" "$ISO_ROOT/debkit"
+      mkdir -p "$ISO_ROOT/boot/grub" "$ISO_ROOT/sketch"
       cp -f "$DIST/kernel" "$ISO_ROOT/boot/kernel"
       cp -f "$DIST/ramdisk.img" "$ISO_ROOT/boot/initrd.img"
-      cp -f "$DIST/system.img" "$ISO_ROOT/debkit/system.img"
+      cp -f "$DIST/system.img" "$ISO_ROOT/sketch/system.img"
       if [ -f "$DIST/system_ext.img" ]; then
-        cp -f "$DIST/system_ext.img" "$ISO_ROOT/debkit/system_ext.img"
+        cp -f "$DIST/system_ext.img" "$ISO_ROOT/sketch/system_ext.img"
       fi
 
       cat > "$ISO_ROOT/boot/grub/grub.cfg" <<'EOF'
 set timeout=5
 set default=0
 
-menuentry "DebKit amd64 (live)" {
+menuentry "SketchOpenSourceProject amd64 (live)" {
     linux /boot/kernel androidboot.hardware=android_x86_64 \
           androidboot.selinux=permissive androidboot.console=ttyS0 \
-          console=tty0 SRC=/debkit/system.img
+          console=tty0 SRC=/sketch/system.img
     initrd /boot/initrd.img
 }
 
-menuentry "DebKit amd64 (live, no SELinux)" {
+menuentry "SketchOpenSourceProject amd64 (live, no SELinux)" {
     linux /boot/kernel androidboot.hardware=android_x86_64 \
-          androidboot.selinux=disabled console=tty0 SRC=/debkit/system.img
+          androidboot.selinux=disabled console=tty0 SRC=/sketch/system.img
     initrd /boot/initrd.img
 }
 EOF
 
       log "building the ISO (grub-mkrescue)"
-      if grub-mkrescue -o "$DIST/debkit-$ARCH.iso" "$ISO_ROOT" >/dev/null 2>&1; then
-        log "live ISO: debkit-$ARCH.iso"
+      if grub-mkrescue -o "$DIST/sketch-$ARCH.iso" "$ISO_ROOT" >/dev/null 2>&1; then
+        log "live ISO: sketch-$ARCH.iso"
       else
         log "warning: grub-mkrescue failed; the ISO was not built (images are still here)"
       fi
@@ -141,21 +141,21 @@ GIT_REV="$(git -C "$REPO_DIR" rev-parse --short HEAD 2>/dev/null || echo uncommi
 BUILD_DATE="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
 
 cat > "$DIST/manifest.txt" <<EOF
-DebKit $ARCH ($VARIANT)
+SketchOpenSourceProject $ARCH ($VARIANT)
 built   $BUILD_DATE
 commit  $GIT_REV
 out     $OUT_DIR
 host    $(uname -sr) $(uname -m)
 
 What this is
-  An AOSP 16 image with the DebKit .deb runtime: dpkg inside a Debian chroot,
-  cross-arch through qemu-user, debloated of the stock AOSP apps.
+  A lightweight Android 16 build on LineageOS, with no Google apps, and with the
+  Sketch .deb runtime: dpkg inside a Debian chroot, cross-arch through qemu-user.
 
 Flash it
   fastboot flashall              from the unzipped bundle (or flash each .img)
 
 Run the live ISO (amd64)
-  qemu-system-x86_64 -m 4G -cdrom debkit-amd64.iso   (or boot it on bare metal)
+  qemu-system-x86_64 -m 4G -cdrom sketch-amd64.iso   (or boot it on bare metal)
 
 Install a .deb on the device
   adb root && deb rootfs init && deb install ./foo.deb
