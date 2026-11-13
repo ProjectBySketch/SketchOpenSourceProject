@@ -61,12 +61,16 @@ break a build across releases.
 On a Linux host with `repo`, git and about 250 GiB free:
 
 ```
-./build.sh env                  # check the host first
-./build.sh sync                 # repo init/sync LineageOS into ~/lineage
-./build.sh rootfs both          # Debian userland for arm64 and amd64
-./build.sh build arm64          # sketch_arm64-userdebug
-./build.sh build amd64          # sketch_x86_64-userdebug
+bash build.sh env               # check the host first
+bash build.sh sync              # repo init/sync LineageOS into ~/lineage
+bash build.sh rootfs both       # Debian userland for arm64 and amd64
+bash build.sh build arm64       # sketch_arm64-userdebug
+bash build.sh build amd64       # sketch_x86_64-userdebug
 ```
+
+`bash build.sh` rather than `./build.sh` because the scripts in this repository
+were authored without the executable bit. One `chmod +x build.sh scripts/*.sh`
+fixes that permanently; until then every command works the same either way.
 
 `sync` symlinks this repository into the tree as `vendor/sketch`, so you keep
 editing here and the build sees it there. `AOSP_DIR` and `LINEAGE_BRANCH`
@@ -116,12 +120,12 @@ it:
 **On your own Linux machine:**
 
 ```
-./build.sh env && ./build.sh sync
-./build.sh rootfs both
-./build.sh build arm64 && ./build.sh artifacts arm64
-./build.sh build amd64 && ./build.sh artifacts amd64
-./build.sh publish v1.0 --list     # see exactly what would go up
-./build.sh publish v1.0            # needs `gh auth login`
+bash build.sh env && bash build.sh sync
+bash build.sh rootfs both
+bash build.sh build arm64 && bash build.sh artifacts arm64
+bash build.sh build amd64 && bash build.sh artifacts amd64
+bash build.sh publish v1.0 --list     # see exactly what would go up
+bash build.sh publish v1.0            # needs `gh auth login`
 ```
 
 **Each architecture gets its own release**, so a download is never ambiguous:

@@ -30,23 +30,23 @@ lunch_target() {
 }
 
 cmd_env() {
-  "$REPO_DIR/scripts/check-env.sh"
+  bash "$REPO_DIR/scripts/check-env.sh"
 }
 
 cmd_sync() {
-  "$REPO_DIR/scripts/fetch-lineage.sh" "$AOSP_DIR" "$LINEAGE_BRANCH"
-  "$REPO_DIR/scripts/link-vendor.sh" "$REPO_DIR" "$AOSP_DIR"
+  bash "$REPO_DIR/scripts/fetch-lineage.sh" "$AOSP_DIR" "$LINEAGE_BRANCH"
+  bash "$REPO_DIR/scripts/link-vendor.sh" "$REPO_DIR" "$AOSP_DIR"
 }
 
 cmd_rootfs() {
   local arch="${1:-both}"
   case "$arch" in
     both)
-      "$REPO_DIR/scripts/make-rootfs.sh" arm64 "$REPO_DIR"
-      "$REPO_DIR/scripts/make-rootfs.sh" amd64 "$REPO_DIR"
+      bash "$REPO_DIR/scripts/make-rootfs.sh" arm64 "$REPO_DIR"
+      bash "$REPO_DIR/scripts/make-rootfs.sh" amd64 "$REPO_DIR"
       ;;
     arm64|amd64)
-      "$REPO_DIR/scripts/make-rootfs.sh" "$arch" "$REPO_DIR"
+      bash "$REPO_DIR/scripts/make-rootfs.sh" "$arch" "$REPO_DIR"
       ;;
     *) die "unknown arch '$arch' (use arm64, amd64 or both)" ;;
   esac
@@ -77,14 +77,14 @@ cmd_both() {
 
 cmd_artifacts() {
   local arch="${1:-arm64}" variant="${2:-userdebug}"
-  "$REPO_DIR/scripts/make-artifacts.sh" "$arch" "$variant" "$REPO_DIR"
+  bash "$REPO_DIR/scripts/make-artifacts.sh" "$arch" "$variant" "$REPO_DIR"
 }
 
 cmd_publish() {
   local tag="${1:-}"
   [ -n "$tag" ] || die "usage: $0 publish <tag> [--list|--dry-run]   (e.g. $0 publish v1.0)"
   shift || true
-  "$REPO_DIR/scripts/publish-release.sh" "$tag" "$REPO_DIR" "$@"
+  bash "$REPO_DIR/scripts/publish-release.sh" "$tag" "$REPO_DIR" "$@"
 }
 
 usage() {

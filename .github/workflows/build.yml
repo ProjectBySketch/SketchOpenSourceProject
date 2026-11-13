@@ -62,17 +62,18 @@ jobs:
 
       - name: Scripts are executable
         run: |
-          # A warning, not a failure: this repository's files were authored on a
-          # device without a shell, so the mode bits may not be set. Fix with
-          #   chmod +x build.sh scripts/*.sh && git update-index --chmod=+x ...
+          # A warning, not a failure: these files were authored on a device
+          # without a shell, so the mode bits are not set in git. Everything in
+          # this repository invokes the scripts as `bash script.sh`, so it all
+          # works anyway; this only flags it so it can be tidied up.
           missing=0
           for f in build.sh scripts/*.sh; do
             if [ ! -x "$f" ]; then
-              echo "::warning file=$f::not executable - run: chmod +x $f"
+              echo "::notice file=$f::not executable in git - run: chmod +x build.sh scripts/*.sh"
               missing=$((missing + 1))
             fi
           done
-          echo "$missing file(s) without the executable bit"
+          echo "$missing file(s) without the executable bit (harmless, see above)"
 
       - name: Workflow YAML is valid
         run: |
@@ -175,8 +176,8 @@ jobs:
           done
           : > dist/sketch-amd64-userdebug/sketch-amd64.iso
 
-          ./scripts/publish-release.sh v0.0-test --list  | tee /tmp/list.txt
-          ./scripts/publish-release.sh v0.0-test --dry-run | tee /tmp/dry.txt
+          bash ./scripts/publish-release.sh v0.0-test --list    | tee /tmp/list.txt
+          bash ./scripts/publish-release.sh v0.0-test --dry-run | tee /tmp/dry.txt
 
           grep -q 'v0.0-test-arm64' /tmp/list.txt
           grep -q 'v0.0-test-amd64' /tmp/list.txt
@@ -190,7 +191,7 @@ jobs:
         run: |
           set -e
           mkdir -p dist/sketch-riscv64-userdebug
-          if ./scripts/publish-release.sh v0.0-test --list > /tmp/empty.txt 2>&1; then
+          if bash ./scripts/publish-release.sh v0.0-test --list > /tmp/empty.txt 2>&1; then
             echo "::error::publisher accepted a dist/ with no images"
             exit 1
           fi
@@ -210,9 +211,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Host check
-        run: ./build.sh env
+        run: bash ./build.sh env
       - name: Sync LineageOS
-        run: ./build.sh sync
+        run: bash ./build.sh sync
 
   build:
     name: build ${{ matrix.arch }}
@@ -226,13 +227,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Debian userland
-        run: ./build.sh rootfs ${{ matrix.arch }}
+        run: bash ./build.sh rootfs ${{ matrix.arch }}
       - name: Build ${{ matrix.arch }}
         env:
           VARIANT: ${{ github.event.inputs.variant || 'userdebug' }}
-        run: ./build.sh build ${{ matrix.arch }} "$VARIANT"
+        run: bash ./build.sh build ${{ matrix.arch }} "$VARIANT"
       - name: Collect images, ISO and binaries
-        run: ./scripts/make-artifacts.sh ${{ matrix.arch }} "${{ github.event.inputs.variant || 'userdebug' }}"
+        run: bash ./scripts/make-artifacts.sh ${{ matrix.arch }} "${{ github.event.inputs.variant || 'userdebug' }}"
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -252,11 +253,11 @@ jobs:
           path: dist
           merge-multiple: true
       - name: Show what will be published
-        run: ./scripts/publish-release.sh "$TAG" --list
+        run: bash ./scripts/publish-release.sh "$TAG" --list
         env:
           TAG: ${{ github.event.inputs.tag || (github.event_name == 'push' && github.ref_name) || format('sketch-{0}', github.run_number) }}
       - name: Publish one release per architecture
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ github.event.inputs.tag || (github.event_name == 'push' && github.ref_name) || format('sketch-{0}', github.run_number) }}
-        run: ./scripts/publish-release.sh "$TAG"
+        run: bash ./scripts/publish-release.sh "$TAG"
