@@ -25,8 +25,20 @@ namespace {
 
 // Where the image keeps the userland tarball it was built with.
 constexpr const char* kSystemExtDir = "/system_ext/sketch";
-// toybox tar handles gzip and preserves ownership when run as root.
-constexpr const char* kTar = "/system/bin/tar";
+
+// toybox tar handles gzip and preserves ownership when run as root. Off-device
+// (a Linux host, CI, a container) there is no toybox, so fall back to whatever
+// tar the system has - which is what makes the whole runtime runnable without
+// an Android image at all.
+std::string TarBinary() {
+  static const char* kCandidates[] = {
+      "/system/bin/tar", "/bin/tar", "/usr/bin/tar", "/usr/local/bin/tar",
+  };
+  for (const char* c : kCandidates) {
+    if (PathExists(c)) return c;
+  }
+  return "tar";   // last resort: let execvp search PATH
+}
 
 bool Mounted(const std::string& target) {
   std::string mounts;
@@ -51,7 +63,11 @@ bool BindMount(const std::string& source, const std::string& target, bool* mount
 
 RootfsPaths DefaultPaths() {
   RootfsPaths p;
-  p.base = "/data/sketch";
+  // SKETCH_BASE exists so the runtime can be exercised somewhere other than a
+  // phone: a Linux host, a container, a CI runner, or a scratch directory.
+  // On a device it is unset and this is /data/sketch.
+  const char* base = ::getenv("SKETCH_BASE");
+  p.base = (base != nullptr && base[0] != '\0') ? base : "/data/sketch";
   p.rootfs = JoinPath(p.base, "rootfs");
   p.db = JoinPath(p.base, "db");
   p.cache = JoinPath(p.base, "cache");
@@ -118,7 +134,7 @@ bool InstallRootfs(const RootfsPaths& p, const std::string& from, std::string& e
   }
 
   LogInfo("unpacking " + tarball + " into " + p.rootfs);
-  int rc = RunProcess({kTar, "-xzf", tarball, "-C", p.rootfs});
+  int rc = RunProcess({TarBinary(), "-xzf", tarball, "-C", p.rootfs});
   if (rc != 0) {
     err = "tar failed with exit code " + std::to_string(rc);
     return false;

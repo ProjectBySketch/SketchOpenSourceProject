@@ -3,6 +3,9 @@
 vendor/sketch/rootfs/prebuilt/*.tar.gz
 vendor/sketch/rootfs/prebuilt/qemu-*-static
 
+# scripts/run-local.sh: a compiled sketchd and a Debian userland, on this host
+.local-run/
+
 # Everything ./build.sh artifacts collects. Published as a GitHub release, never
 # committed: images are gigabytes and git is not a download server.
 dist/

@@ -73,12 +73,12 @@ void PrintArchStatus();
 // ---------------------------------------------------------------- rootfs.cpp -
 
 struct RootfsPaths {
-  std::string base;       // /data/sketch
-  std::string rootfs;     // /data/sketch/rootfs
-  std::string db;         // /data/sketch/db
-  std::string cache;      // /data/sketch/cache
-  std::string run;        // /data/sketch/run
-  std::string log;        // /data/sketch/log
+  std::string base;       // /data/sketch, or $SKETCH_BASE when set
+  std::string rootfs;     // <base>/rootfs
+  std::string db;         // <base>/db
+  std::string cache;      // <base>/cache
+  std::string run;        // <base>/run
+  std::string log;        // <base>/log
 };
 
 RootfsPaths DefaultPaths();

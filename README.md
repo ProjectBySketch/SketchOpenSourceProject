@@ -110,6 +110,52 @@ default is LineageOS' generic arm64 target, which boots in the emulator but is
 not a phone image. Getting the device tree in is the usual LineageOS
 `.repo/local_manifests/` business.
 
+## Running it without an image
+
+The `.deb` feature is not an image. It is one binary (`sketchd`) plus a Debian
+userland tarball, so it runs anywhere Linux does. No ISO, no emulator, no
+flashing, no 250 GiB build.
+
+**On any Linux machine** - this compiles the real daemon, builds a real Debian
+userland with `debootstrap`, then builds a real `.deb` with `dpkg-deb`, installs
+it, runs it inside the chroot, lists it and removes it:
+
+```
+bash scripts/run-local.sh build      # compile sketchd
+bash scripts/run-local.sh demo       # userland + a real package, end to end
+```
+
+Everything lands in `.local-run/` and nothing on the host is touched. The
+unpack and install steps re-exec through `sudo`, because a chroot and bind
+mounts need root. Individual steps, and any CLI verb, are available too:
+
+```
+bash scripts/run-local.sh userland   # just build the Debian userland
+bash scripts/run-local.sh init       # unpack it via `sketchd rootfs init`
+bash scripts/run-local.sh deb list   # any `deb` command
+bash scripts/run-local.sh shell      # a shell inside the userland
+```
+
+This is exactly what CI does on every push, on a GitHub-hosted runner, so the
+claim is tested rather than asserted.
+
+**On a phone you already have**, rooted (userdebug build or Magisk) - the same
+runtime, pushed onto the device:
+
+```
+export ANDROID_NDK_HOME=/path/to/ndk
+bash scripts/install-onto-device.sh            # or --serial <device>
+```
+
+It cross-compiles `sketchd` for the device ABI, pushes it and a userland tarball
+to `/data/sketch`, then runs `deb about`, `deb rootfs init` and `deb arch` to
+prove it. From then on `su -c '/data/sketch/bin/deb install foo.deb'` works on
+that phone. That is the feature working on real hardware without building a ROM.
+
+What you *cannot* do without a build is have this as your phone's actual system
+image - debloated, with `deb` on `PATH` out of the box. That still needs
+`bash build.sh build <arch>`, or the CI runner.
+
 ## Where the built files come from
 
 AOSP-class images cannot be compiled on a phone, and an image set is gigabytes:
@@ -172,8 +218,10 @@ Assets over GitHub's 2 GiB limit are split into `.partNN` pieces; join them with
 
 ## Layout
 
-- `build.sh` - the driver: `env`, `sync`, `rootfs`, `build`, `both`, `artifacts`, `publish`
+- `build.sh` - the driver: `env`, `sync`, `rootfs`, `build`, `both`, `artifacts`, `publish`, `run`, `device`
 - `scripts/` - host checks, LineageOS sync, vendor link, userland, artifacts, release
+- `scripts/run-local.sh` - run the `.deb` runtime here, no image needed
+- `scripts/install-onto-device.sh` - push it onto an already-rooted phone
 - `scripts/publish-release.sh` - one GitHub release per architecture
 - `.github/workflows/build.yml` - CI: hosted `verify`, self-hosted image build
 - `vendor/sketch/AndroidProducts.mk` - the two lunch targets
@@ -185,9 +233,10 @@ Assets over GitHub's 2 GiB limit are split into `.partNN` pieces; join them with
 
 ## Status
 
-The source is written and reviewed; the images have not been built yet. There is
-no compiler on the device this was authored on, so the first `./build.sh sync` /
-`./build.sh build` (or the first CI run) is where the build gets proven. The
-SELinux policy is deliberately `permissive sketchd` bring-up policy - it is the
-piece most likely to need adjusting against a real device, and the piece to
-tighten before shipping.
+The `.deb` runtime is compiled, linked and exercised end to end by CI on every
+push: a real Debian userland, a real `.deb`, installed, run, listed and removed.
+What has *not* been built is the Android image itself - there is no LineageOS
+tree on the device this was authored on, so the first `bash build.sh sync` /
+`bash build.sh build` is where the image gets proven. The SELinux policy is
+deliberately `permissive sketchd` bring-up policy: it is the piece most likely to
+need adjusting against a real device, and the piece to tighten before shipping.

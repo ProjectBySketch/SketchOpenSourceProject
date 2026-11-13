@@ -157,6 +157,34 @@ jobs:
           /tmp/deb about | head -3
           /tmp/deb list
 
+      # The whole point of this job: prove the .deb runtime works with no image.
+      # run-local.sh is what a user runs on their own Linux box; here it runs on
+      # a hosted runner, which is the cheapest possible proof that the feature
+      # is real rather than described.
+      - name: .deb runtime works with no image - build it and its userland
+        run: |
+          set -e
+          bash ./scripts/run-local.sh build
+          sudo bash ./scripts/run-local.sh userland
+          ls -la .local-run/base/*.tar.gz
+
+      - name: .deb runtime works with no image - install a real package
+        run: |
+          set -e
+          sudo env SKETCH_LOCAL_DIR="$PWD/.local-run" \
+            bash ./scripts/run-local.sh init
+          sudo env SKETCH_LOCAL_DIR="$PWD/.local-run" \
+            bash ./scripts/run-local.sh demo
+
+      - name: The userland is a real Debian
+        run: |
+          set -e
+          sudo env SKETCH_BASE="$PWD/.local-run/base" \
+            ./.local-run/bin/sketchd run /bin/sh -c \
+            '. /etc/os-release && echo "$PRETTY_NAME" && dpkg --version | head -1'
+          sudo env SKETCH_BASE="$PWD/.local-run/base" \
+            ./.local-run/bin/sketchd arch
+
       - name: Release layout is one per architecture
         run: |
           set -e

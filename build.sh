@@ -87,6 +87,17 @@ cmd_publish() {
   bash "$REPO_DIR/scripts/publish-release.sh" "$tag" "$REPO_DIR" "$@"
 }
 
+# Runs the .deb runtime here, with no image: compile sketchd, build a Debian
+# userland, and exercise a real package end to end.
+cmd_run() {
+  bash "$REPO_DIR/scripts/run-local.sh" "${@:-demo}"
+}
+
+# Puts the runtime on an already-rooted phone, with no image build.
+cmd_device() {
+  bash "$REPO_DIR/scripts/install-onto-device.sh" "$@"
+}
+
 usage() {
   cat <<'EOF'
 SketchOpenSourceProject build driver
@@ -99,6 +110,13 @@ SketchOpenSourceProject build driver
   ./build.sh artifacts <arch>     collect images, live ISO and binaries into dist/
   ./build.sh publish <tag>        publish one release per arch: <tag>-arm64, <tag>-amd64
                                   add --list to see what would go up, --dry-run to check
+  ./build.sh run [build|userland|init|demo|deb|shell]
+                                  run the .deb runtime HERE, no image needed
+  ./build.sh device [--serial S]  push the runtime onto an already-rooted phone
+
+No image, ISO or emulator is needed to try the .deb feature: `./build.sh run
+demo` compiles sketchd, builds a Debian userland, then builds a real .deb,
+installs it, runs it inside the chroot, lists it and removes it.
 
 Environment:
   AOSP_DIR        where the LineageOS tree lives  (default: $HOME/lineage)
@@ -134,6 +152,8 @@ main() {
     both) cmd_both ;;
     artifacts) cmd_artifacts "${1:-arm64}" "${2:-userdebug}" ;;
     publish) cmd_publish "${1:-}" ;;
+    run) shift || true; cmd_run "$@" ;;
+    device) cmd_device "$@" ;;
     help|-h|--help) usage ;;
     *) usage; exit 1 ;;
   esac
