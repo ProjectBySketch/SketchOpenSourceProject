@@ -14,7 +14,8 @@ name: build
 #             a self-hosted runner, registered with:
 #               ./config.sh --labels self-hosted,linux,aosp
 #             and it only runs when asked (Actions -> Run workflow) or on a tag,
-#             so an ordinary push never queues work nobody can serve.
+#             so an ordinary push never queues work nobody can serve. It ends in
+#             one GitHub release per architecture: <tag>-arm64, <tag>-amd64.
 
 on:
   push:
@@ -155,6 +156,48 @@ jobs:
           /tmp/deb about | head -3
           /tmp/deb list
 
+      - name: Release layout is one per architecture
+        run: |
+          set -e
+          # Fabricate the smallest possible dist/ (empty files, thrown away) and
+          # check the publisher finds both architectures and names the assets
+          # per arch. No gh, no upload: --list and --dry-run only.
+          mkdir -p dist/sketch-arm64-userdebug/bin dist/sketch-amd64-userdebug/bin
+          for arch in arm64 amd64; do
+            d="dist/sketch-$arch-userdebug"
+            : > "$d/system.img"
+            : > "$d/boot.img"
+            : > "$d/sketch-$arch-userdebug.zip"
+            : > "$d/bin/sketchd"
+            : > "$d/bin/rootfs-$arch.tar.gz"
+            echo "manifest for $arch" > "$d/manifest.txt"
+            echo "checksums for $arch" > "$d/SHA256SUMS"
+          done
+          : > dist/sketch-amd64-userdebug/sketch-amd64.iso
+
+          ./scripts/publish-release.sh v0.0-test --list  | tee /tmp/list.txt
+          ./scripts/publish-release.sh v0.0-test --dry-run | tee /tmp/dry.txt
+
+          grep -q 'v0.0-test-arm64' /tmp/list.txt
+          grep -q 'v0.0-test-amd64' /tmp/list.txt
+          grep -q 'sketch-amd64.iso' /tmp/list.txt
+          grep -q 'sketchd-arm64'    /tmp/list.txt
+          grep -q 'sketchd-amd64'    /tmp/list.txt
+          grep -q 'rootfs-arm64'     /tmp/list.txt
+          echo "ok   per-arch releases resolve correctly"
+
+      - name: An architecture with no images is refused
+        run: |
+          set -e
+          mkdir -p dist/sketch-riscv64-userdebug
+          if ./scripts/publish-release.sh v0.0-test --list > /tmp/empty.txt 2>&1; then
+            echo "::error::publisher accepted a dist/ with no images"
+            exit 1
+          fi
+          grep -q 'no built architectures' /tmp/empty.txt
+          echo "ok   refuses to publish an empty release"
+          rm -rf dist
+
   # ----------------------------------------------------------- self-hosted ---
   # Sync is its own job because GitHub kills any single job at 6 hours, and
   # `repo sync` on a cold cache can take most of that on its own.
@@ -208,8 +251,12 @@ jobs:
         with:
           path: dist
           merge-multiple: true
-      - name: Publish release
+      - name: Show what will be published
+        run: ./scripts/publish-release.sh "$TAG" --list
+        env:
+          TAG: ${{ github.event.inputs.tag || (github.event_name == 'push' && github.ref_name) || format('sketch-{0}', github.run_number) }}
+      - name: Publish one release per architecture
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: ${{ github.event.inputs.tag || github.ref_name }}
+          TAG: ${{ github.event.inputs.tag || (github.event_name == 'push' && github.ref_name) || format('sketch-{0}', github.run_number) }}
         run: ./scripts/publish-release.sh "$TAG"

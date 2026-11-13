@@ -120,8 +120,20 @@ it:
 ./build.sh rootfs both
 ./build.sh build arm64 && ./build.sh artifacts arm64
 ./build.sh build amd64 && ./build.sh artifacts amd64
-./build.sh publish v1.0          # needs `gh auth login`
+./build.sh publish v1.0 --list     # see exactly what would go up
+./build.sh publish v1.0            # needs `gh auth login`
 ```
+
+**Each architecture gets its own release**, so a download is never ambiguous:
+
+- `v1.0-arm64` - `sketch-arm64-userdebug.zip`, `sketchd-arm64`,
+  `rootfs-arm64.tar.gz` and the raw `*.img` files
+- `v1.0-amd64` - `sketch-amd64-userdebug.zip`, `sketch-amd64.iso`,
+  `sketchd-amd64`, `rootfs-amd64.tar.gz` and the raw `*.img` files
+
+An architecture is only published when `dist/` really holds its images - a
+missing build is an error, never an empty release. `--list` prints what each
+release would carry; `--dry-run` does everything except upload.
 
 **Through GitHub Actions**, which does the same thing on a machine of yours.
 The workflow has two halves:
@@ -142,7 +154,7 @@ The workflow has two halves:
 ./config.sh --labels self-hosted,linux,aosp
 ```
 
-Then *Actions -> build -> Run workflow*, tick `publish`, and the release appears.
+Then *Actions -> build -> Run workflow*, tick `publish`, and the releases appear.
 Each `dist/sketch-<arch>-<variant>/` holds:
 
 - `*.img` - every image the build made (system, boot, system_ext, super, ...)
@@ -158,7 +170,8 @@ Assets over GitHub's 2 GiB limit are split into `.partNN` pieces; join them with
 
 - `build.sh` - the driver: `env`, `sync`, `rootfs`, `build`, `both`, `artifacts`, `publish`
 - `scripts/` - host checks, LineageOS sync, vendor link, userland, artifacts, release
-- `.github/workflows/build.yml` - CI that builds and publishes on your runner
+- `scripts/publish-release.sh` - one GitHub release per architecture
+- `.github/workflows/build.yml` - CI: hosted `verify`, self-hosted image build
 - `vendor/sketch/AndroidProducts.mk` - the two lunch targets
 - `vendor/sketch/sketch_arm64.mk`, `sketch_x86_64.mk` - base product + layer
 - `vendor/sketch/sketch_product.mk` - packages, userland embedding, properties

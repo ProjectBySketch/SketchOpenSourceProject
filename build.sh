@@ -82,8 +82,9 @@ cmd_artifacts() {
 
 cmd_publish() {
   local tag="${1:-}"
-  [ -n "$tag" ] || die "usage: $0 publish <tag>   (e.g. $0 publish v1.0)"
-  "$REPO_DIR/scripts/publish-release.sh" "$tag" "$REPO_DIR"
+  [ -n "$tag" ] || die "usage: $0 publish <tag> [--list|--dry-run]   (e.g. $0 publish v1.0)"
+  shift || true
+  "$REPO_DIR/scripts/publish-release.sh" "$tag" "$REPO_DIR" "$@"
 }
 
 usage() {
@@ -96,7 +97,8 @@ SketchOpenSourceProject build driver
   ./build.sh build <arch> [var]   lunch + build (var: userdebug|user)
   ./build.sh both                 build arm64 and amd64 userdebug
   ./build.sh artifacts <arch>     collect images, live ISO and binaries into dist/
-  ./build.sh publish <tag>        upload dist/ as a GitHub release
+  ./build.sh publish <tag>        publish one release per arch: <tag>-arm64, <tag>-amd64
+                                  add --list to see what would go up, --dry-run to check
 
 Environment:
   AOSP_DIR        where the LineageOS tree lives  (default: $HOME/lineage)
