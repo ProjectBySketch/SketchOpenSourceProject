@@ -123,11 +123,19 @@ it:
 ./build.sh publish v1.0          # needs `gh auth login`
 ```
 
-**Through GitHub Actions**, which does the same thing on a machine of yours:
-`.github/workflows/build.yml` runs `env` -> `sync` -> both architectures ->
-`artifacts`, uploads them as workflow artifacts and, when you ask for it,
-publishes the release. It runs on a **self-hosted** runner because a hosted
-runner has neither the disk nor the hours:
+**Through GitHub Actions**, which does the same thing on a machine of yours.
+The workflow has two halves:
+
+- **`verify` runs on GitHub's own hosted runners, free, on every push.** It
+  cannot build an image, but it checks the things that actually break: every
+  shell script parses, the workflow YAML is valid, the makefiles and
+  `Android.bp` point at files that exist, and **the `sketchd` daemon compiles,
+  links and runs**. That is the highest-risk code here, so it is worth having on
+  every commit.
+- **`sync` -> `build` -> `release` is the real image build**, on a
+  **self-hosted** runner, because a hosted one has neither the disk nor the
+  hours. It only runs when you ask (*Actions -> build -> Run workflow*) or when
+  you push a tag, so an ordinary push never queues work nobody can serve:
 
 ```
 # on the build machine, once

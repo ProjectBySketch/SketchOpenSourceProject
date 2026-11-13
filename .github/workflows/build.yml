@@ -1,16 +1,27 @@
 name: build
 
-# Builds SketchOpenSourceProject on a Linux machine with the LineageOS tree and
-# publishes the images, the ISO and the binaries as a release.
+# Two very different jobs, on purpose:
 #
-# Nothing is built on GitHub's hosted runners: even a LineageOS build needs more
-# disk and hours than a hosted machine has, and the tree has to be synced once.
+#   verify  - runs on GitHub's own hosted runners, on every push. It cannot build
+#             an Android image (no LineageOS tree, no 250 GiB of disk), but it
+#             does the checks that catch real mistakes: every shell script must
+#             parse, the workflow must be valid YAML, and the sketchd daemon must
+#             compile and link. That last one is the highest-risk code in the
+#             repository, and it is the one thing a hosted runner can prove.
 #
-# Register a self-hosted runner on your build machine with these labels:
-#   ./config.sh --labels self-hosted,linux,aosp
-# and keep the LineageOS tree at $AOSP_DIR (default ~/lineage) on it.
+#   sync/build/release - the real image build, which needs a machine with the
+#             LineageOS tree, ~250 GiB free and hours to spare. It only runs on
+#             a self-hosted runner, registered with:
+#               ./config.sh --labels self-hosted,linux,aosp
+#             and it only runs when asked (Actions -> Run workflow) or on a tag,
+#             so an ordinary push never queues work nobody can serve.
 
 on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+    branches: [main]
   workflow_dispatch:
     inputs:
       variant:
@@ -26,18 +37,131 @@ on:
         description: "Release tag (blank: sketch-<run number>)"
         type: string
         default: ""
-  push:
-    tags:
-      - "v*"
 
 concurrency:
   group: sketch-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
+  # ---------------------------------------------------------------- hosted ---
+  verify:
+    name: verify (hosted)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Shell scripts parse
+        run: |
+          set -e
+          for f in build.sh scripts/*.sh; do
+            bash -n "$f"
+            echo "ok   $f"
+          done
+
+      - name: Scripts are executable
+        run: |
+          # A warning, not a failure: this repository's files were authored on a
+          # device without a shell, so the mode bits may not be set. Fix with
+          #   chmod +x build.sh scripts/*.sh && git update-index --chmod=+x ...
+          missing=0
+          for f in build.sh scripts/*.sh; do
+            if [ ! -x "$f" ]; then
+              echo "::warning file=$f::not executable - run: chmod +x $f"
+              missing=$((missing + 1))
+            fi
+          done
+          echo "$missing file(s) without the executable bit"
+
+      - name: Workflow YAML is valid
+        run: |
+          python3 -c "import yaml" 2>/dev/null || pip install --quiet pyyaml
+          python3 - <<'PY'
+          import sys, yaml
+          # Note: PyYAML reads the bare `on:` key as boolean True (YAML 1.1),
+          # which is why only "jobs" is checked here.
+          for path in (".github/workflows/build.yml",):
+              with open(path) as fh:
+                  doc = yaml.safe_load(fh)
+              if not (isinstance(doc, dict) and "jobs" in doc):
+                  sys.exit("invalid workflow: " + path)
+              print("ok  ", path, "->", ", ".join(doc["jobs"]))
+          PY
+
+      - name: Android build files reference real paths
+        run: |
+          set -e
+          # Every file the makefiles and Android.bp point at must exist.
+          for f in \
+            vendor/sketch/sketch_arm64.mk \
+            vendor/sketch/sketch_x86_64.mk \
+            vendor/sketch/sketch_product.mk \
+            vendor/sketch/debloat.mk \
+            vendor/sketch/AndroidProducts.mk \
+            vendor/sketch/sketch.h \
+            vendor/sketch/sketchd/sketch.rc \
+            vendor/sketch/sepolicy/sketchd.te \
+            vendor/sketch/sepolicy/file_contexts ; do
+            test -f "$f" || { echo "missing: $f"; exit 1; }
+            echo "ok   $f"
+          done
+          # The daemon sources listed in Android.bp must be the ones on disk.
+          python3 - <<'PY'
+          import re, os, sys
+          bp = open("vendor/sketch/sketchd/Android.bp").read()
+          listed = set(re.findall(r'"([a-z_]+\.cpp)"', bp))
+          present = {f for f in os.listdir("vendor/sketch/sketchd") if f.endswith(".cpp")}
+          if listed != present:
+              print("Android.bp srcs differ from disk")
+              print("  only in Android.bp:", sorted(listed - present))
+              print("  only on disk      :", sorted(present - listed))
+              sys.exit(1)
+          print("ok   Android.bp srcs match disk:", ", ".join(sorted(listed)))
+          PY
+
+      - name: sketchd compiles and links
+        run: |
+          set -e
+          # glibc is close enough to bionic for this code: pipe2, accept4,
+          # clearenv and the socket headers all exist on both, so a hosted
+          # runner really does prove the daemon builds.
+          g++ -std=c++20 -O1 -Wall -Wextra \
+              -Wno-unused-parameter -Wno-sign-compare \
+              -Ivendor/sketch \
+              -o /tmp/sketchd \
+              vendor/sketch/sketchd/*.cpp
+          echo "--- linked ok ---"
+          ls -l /tmp/sketchd
+          file /tmp/sketchd
+
+      - name: sketchd runs
+        run: |
+          set -e
+          # No root, no /data/sketch: these paths must fail cleanly, not crash.
+          /tmp/sketchd about
+          /tmp/sketchd help
+          /tmp/sketchd arch
+          echo "--- must refuse input it cannot install ---"
+          if /tmp/sketchd install /etc/hostname; then
+            echo "::error::install accepted something it should have refused"
+            exit 1
+          fi
+          echo "ok   refused a non-.deb / unprivileged install"
+
+      - name: The CLI name dispatches as the CLI
+        run: |
+          set -e
+          cp /tmp/sketchd /tmp/deb
+          /tmp/deb about | head -3
+          /tmp/deb list
+
+  # ----------------------------------------------------------- self-hosted ---
   # Sync is its own job because GitHub kills any single job at 6 hours, and
   # `repo sync` on a cold cache can take most of that on its own.
   sync:
+    name: sync LineageOS
+    needs: verify
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/')
     runs-on: [self-hosted, linux, aosp]
     timeout-minutes: 350
     steps:
@@ -48,6 +172,7 @@ jobs:
         run: ./build.sh sync
 
   build:
+    name: build ${{ matrix.arch }}
     needs: sync
     runs-on: [self-hosted, linux, aosp]
     timeout-minutes: 350
@@ -73,8 +198,9 @@ jobs:
           retention-days: 14
 
   release:
+    name: publish release
     needs: build
-    if: github.event_name == 'push' || github.event.inputs.publish == 'true'
+    if: startsWith(github.ref, 'refs/tags/') || github.event.inputs.publish == 'true'
     runs-on: [self-hosted, linux, aosp]
     steps:
       - uses: actions/checkout@v4
@@ -85,5 +211,5 @@ jobs:
       - name: Publish release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: ${{ github.event.inputs.tag || format('sketch-{0}', github.run_number) }}
+          TAG: ${{ github.event.inputs.tag || github.ref_name }}
         run: ./scripts/publish-release.sh "$TAG"
