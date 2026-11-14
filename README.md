@@ -139,6 +139,12 @@ qemu-system-aarch64 -M virt -cpu cortex-a57 -m 1500 -nographic \
   -initrd dist/sketch-arm64-live/sketch-arm64-initrd.gz
 ```
 
+A medium can check itself: boot it with `sketch.selftest=1` (the GRUB menu has a
+*self test* entry) and it installs the package it ships, runs it, prints what
+happened to every console and powers off. That is exactly what CI runs on both
+architectures before anything is published, so the release is a tested download
+rather than a hopeful one.
+
 **On any Linux machine**, without booting anything - this compiles the real
 daemon, builds a real Debian userland with `debootstrap`, then builds a real
 `.deb` with `dpkg-deb`, installs it, runs it inside the chroot, lists it and

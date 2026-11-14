@@ -103,6 +103,11 @@ chmod 1777 /tmp /var/tmp
 mount -t devpts devpts /dev/pts 2>/dev/null || true
 mount -t tmpfs  tmpfs  /run     2>/dev/null || true
 
+# The userland carries qemu-user-static, so this medium can install a package
+# for the *other* architecture too. Debian's own definitions do the registering.
+mount -t binfmt_misc binfmt_misc /proc/sys/fs/binfmt_misc 2>/dev/null || true
+update-binfmts --enable 2>/dev/null || true
+
 banner() {
   cat <<'MSG'
 
@@ -325,11 +330,11 @@ build_iso() {
 }
 
 build_disk_image() {
-  local img="$OUT_DIR/sketch-$ARCH-live.img" efi="$WORK/BOOTX64.EFI" cfg="$WORK/efi-grub.cfg" tool
+  local img="$OUT_DIR/sketch-$ARCH-live.img" efi="$WORK/BOOTX64.EFI" cfg="$WORK/efi-grub.cfg" tool need
   for tool in grub-mkstandalone mkfs.vfat mmd mcopy; do
     if ! command -v "$tool" >/dev/null 2>&1; then
-      media_missing "no .img: $tool missing (sudo apt install grub-efi-amd64-bin dosfstools mtools)"
-      return 0
+      warn "no .img: $tool missing (sudo apt install grub-efi-amd64-bin dosfstools mtools)"
+      return 1
     fi
   done
 
@@ -342,33 +347,47 @@ menuentry "SketchOpenSourceProject live - .deb support" {
     linux /boot/vmlinuz console=tty0 console=ttyS0,115200 panic=30 loglevel=4
     initrd /boot/initrd.img
 }
+menuentry "SketchOpenSourceProject live - self test (installs its demo package)" {
+    linux /boot/vmlinuz console=tty0 console=ttyS0,115200 panic=30 loglevel=4 sketch.selftest=1
+    initrd /boot/initrd.img
+}
 EOF
 
   if ! grub-mkstandalone -O x86_64-efi -o "$efi" \
-        --modules="part_gpt part_msdos fat iso9660 search search_label search_fs_label normal linux configfile all_video echo test" \
+        --modules="part_gpt part_msdos fat iso9660 search search_label search_fs_uuid search_fs_file normal linux configfile all_video echo test" \
         "boot/grub/grub.cfg=$cfg" >"$WORK/grub-standalone.log" 2>&1; then
     tail -20 "$WORK/grub-standalone.log" >&2
-    media_missing "grub-mkstandalone failed, no .img"
-    return 0
+    warn "no .img: grub-mkstandalone failed"
+    return 1
   fi
 
-  local need
   need=$(( ( $(stat -c %s "$efi") + $(stat -c %s "$KERNEL") +
              $(stat -c %s "$OUT_DIR/sketch-$ARCH-initrd.gz") ) / 1048576 + 64 ))
 
   rm -f "$img"
-  truncate -s "${need}M" "$img"
-  mkfs.vfat -F32 -n SKETCH "$img" >/dev/null
-  mmd -i "$img" ::/EFI ::/EFI/BOOT ::/boot
-  mcopy -i "$img" "$efi" ::/EFI/BOOT/BOOTX64.EFI
-  mcopy -i "$img" "$KERNEL" ::/boot/vmlinuz
-  mcopy -i "$img" "$OUT_DIR/sketch-$ARCH-initrd.gz" ::/boot/initrd.img
+  if ! truncate -s "${need}M" "$img" || ! mkfs.vfat -F32 -n SKETCH "$img" >/dev/null; then
+    warn "no .img: could not format ${need}M of FAT"
+    return 1
+  fi
+  if ! mmd -i "$img" ::/EFI ::/EFI/BOOT ::/boot ||
+     ! mcopy -i "$img" "$efi" ::/EFI/BOOT/BOOTX64.EFI ||
+     ! mcopy -i "$img" "$KERNEL" ::/boot/vmlinuz ||
+     ! mcopy -i "$img" "$OUT_DIR/sketch-$ARCH-initrd.gz" ::/boot/initrd.img; then
+    warn "no .img: copying the payload into the FAT image failed"
+    rm -f "$img"
+    return 1
+  fi
   log "disk image: $(du -h "$img" | cut -f1) $(basename "$img") (UEFI, dd it to a stick)"
 }
 
 if [ "$ARCH" = "amd64" ]; then
+  # The ISO is the headline artifact: with SKETCH_REQUIRE_MEDIA=1 a failure here
+  # stops the build. The disk image carries the same payload, so it is allowed
+  # to be skipped with a warning.
   build_iso
-  build_disk_image
+  if ! build_disk_image; then
+    warn "the .img was not built; the ISO has the same kernel and initramfs"
+  fi
 else
   log "arm64: no ISO - GRUB has no arm64 route here. Boot the pair:"
   log "  qemu-system-aarch64 -M virt -cpu cortex-a57 -m 1500 \\"
