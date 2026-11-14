@@ -322,57 +322,63 @@ jobs:
             bash scripts/build-dist.sh ${{ matrix.arch }} live
 
       # The receipt: not "it compiled", but "it booted, installed a real package
-      # and ran it". The medium ships the package it installs.
-      - name: The medium boots, installs a .deb and runs it (amd64)
+      # and ran it". The medium ships the package it installs, and a self test
+      # does exactly that when booted with sketch.selftest=1 - so these steps
+      # need no typed input and cannot race the boot. Serial goes to a file
+      # rather than to stdio, so nothing depends on a terminal existing.
+      - name: The ISO boots (amd64)
         if: matrix.arch == 'amd64'
         run: |
           set -e
           d=dist/sketch-amd64-live
           ls -lh "$d"
-          { sleep 45
-            echo
-            echo 'deb about'
-            sleep 12
-            echo 'deb install /root/sketch-hello_1.0_all.deb'
-            sleep 30
-            echo 'sketch-hello'
-            sleep 12
-            echo 'deb list | grep sketch-hello'
-            sleep 10
-            echo 'poweroff -f'
-          } | timeout 300 qemu-system-x86_64 -m 1500 -cdrom "$d/sketch-amd64.iso" \
-                -nographic -no-reboot 2>&1 | tee /tmp/boot-amd64.log || true
-
+          timeout 240 qemu-system-x86_64 -m 2048 -cdrom "$d/sketch-amd64.iso" \
+            -display none -monitor none -serial file:/tmp/boot-iso.log \
+            -no-reboot || true
           echo "--- what the medium said ---"
-          grep -a 'runtime   dpkg inside a Debian chroot' /tmp/boot-amd64.log
-          grep -a 'hello from a Debian package, running on the Sketch live medium' /tmp/boot-amd64.log
-          grep -a 'sketch-hello' /tmp/boot-amd64.log
-          echo "ok   the amd64 medium booted and installed a package"
+          tail -30 /tmp/boot-iso.log
+          grep -a 'SketchOpenSourceProject - live medium' /tmp/boot-iso.log
+          grep -a 'deb install ./foo.deb' /tmp/boot-iso.log
+          echo "ok   GRUB, the kernel and the initramfs from the ISO all came up"
 
-      - name: The medium boots, installs a .deb and runs it (arm64)
+      - name: The medium installs and runs a .deb by itself (amd64)
+        if: matrix.arch == 'amd64'
+        run: |
+          set -e
+          d=dist/sketch-amd64-live
+          timeout 300 qemu-system-x86_64 -m 2048 -no-reboot \
+            -display none -monitor none -serial file:/tmp/selftest-amd64.log \
+            -kernel "$d/sketch-amd64-vmlinuz" \
+            -initrd "$d/sketch-amd64-initrd.gz" \
+            -append "console=ttyS0,115200 panic=30 loglevel=4 sketch.selftest=1" \
+            || true
+          echo "--- what the medium said ---"
+          tail -40 /tmp/selftest-amd64.log
+          grep -a 'SKETCH-SELFTEST-START' /tmp/selftest-amd64.log
+          grep -a 'runtime   dpkg inside a Debian chroot' /tmp/selftest-amd64.log
+          grep -a 'hello from a Debian package, running on the Sketch live medium' /tmp/selftest-amd64.log
+          grep -a 'SKETCH-SELFTEST-OK' /tmp/selftest-amd64.log
+          echo "ok   the amd64 medium installed and ran a real .deb"
+
+      - name: The medium installs and runs a .deb by itself (arm64)
         if: matrix.arch == 'arm64'
         run: |
           set -e
           d=dist/sketch-arm64-live
           ls -lh "$d"
-          { sleep 45
-            echo
-            echo 'deb about'
-            sleep 12
-            echo 'deb install /root/sketch-hello_1.0_all.deb'
-            sleep 30
-            echo 'sketch-hello'
-            sleep 12
-            echo 'poweroff -f'
-          } | timeout 300 qemu-system-aarch64 -M virt -cpu cortex-a57 -m 1500 \
-                -nographic -no-reboot \
-                -kernel "$d/sketch-arm64-vmlinuz" \
-                -initrd "$d/sketch-arm64-initrd.gz" 2>&1 | tee /tmp/boot-arm64.log || true
-
+          timeout 300 qemu-system-aarch64 -M virt -cpu cortex-a57 -m 2048 -no-reboot \
+            -display none -monitor none -serial file:/tmp/selftest-arm64.log \
+            -kernel "$d/sketch-arm64-vmlinuz" \
+            -initrd "$d/sketch-arm64-initrd.gz" \
+            -append "console=ttyAMA0,115200 panic=30 loglevel=4 sketch.selftest=1" \
+            || true
           echo "--- what the medium said ---"
-          grep -a 'runtime   dpkg inside a Debian chroot' /tmp/boot-arm64.log
-          grep -a 'hello from a Debian package, running on the Sketch live medium' /tmp/boot-arm64.log
-          echo "ok   the arm64 medium booted and installed a package"
+          tail -40 /tmp/selftest-arm64.log
+          grep -a 'SKETCH-SELFTEST-START' /tmp/selftest-arm64.log
+          grep -a 'runtime   dpkg inside a Debian chroot' /tmp/selftest-arm64.log
+          grep -a 'hello from a Debian package, running on the Sketch live medium' /tmp/selftest-arm64.log
+          grep -a 'SKETCH-SELFTEST-OK' /tmp/selftest-arm64.log
+          echo "ok   the arm64 medium installed and ran a real .deb"
 
       - name: Upload the artifacts
         uses: actions/upload-artifact@v4

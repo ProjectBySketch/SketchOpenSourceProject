@@ -139,6 +139,38 @@ for c in $(consoles); do
   fi
 done
 
+# A medium that can check itself: boot it with sketch.selftest=1 (there is a GRUB
+# entry for it) and it installs the package it ships, runs it, prints what
+# happened to every console and powers off. CI boots exactly this, which is how
+# the downloads on the releases page are known to work rather than assumed to.
+selftest() {
+  local out c
+  out="$(
+    echo "SKETCH-SELFTEST-START $(uname -srm)"
+    deb about
+    if [ -f /root/sketch-hello_1.0_all.deb ]; then
+      deb install /root/sketch-hello_1.0_all.deb
+      sketch-hello
+      deb list | grep sketch-hello
+    else
+      echo "no demo package on this medium"
+    fi
+    echo "SKETCH-SELFTEST-OK $(uname -m)"
+  )" 2>&1
+
+  for c in console $(consoles); do
+    if [ -c "/dev/$c" ]; then
+      printf '%s\n' "$out" > "/dev/$c" 2>/dev/null || true
+    fi
+  done
+  sync
+  poweroff -f 2>/dev/null || reboot -f 2>/dev/null || echo o > /proc/sysrq-trigger
+}
+
+if grep -q 'sketch.selftest=1' /proc/cmdline 2>/dev/null; then
+  selftest
+fi
+
 # One respawning shell per console, so a closed session is not a dead machine.
 spawn() {
   local tty="$1"
@@ -261,6 +293,11 @@ menuentry "SketchOpenSourceProject live - .deb support (VGA console)" {
 
 menuentry "SketchOpenSourceProject live - .deb support (serial console)" {
     linux $2 console=ttyS0,115200 console=tty0 panic=30 loglevel=4
+    initrd $3
+}
+
+menuentry "SketchOpenSourceProject live - self test (installs its demo package)" {
+    linux $2 console=tty0 console=ttyS0,115200 panic=30 loglevel=4 sketch.selftest=1
     initrd $3
 }
 EOF
