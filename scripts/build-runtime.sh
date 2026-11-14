@@ -44,11 +44,22 @@ command -v "$CXX" >/dev/null 2>&1 || die "$CXX not found: sudo apt install g++ g
 
 mkdir -p "$(dirname "$OUT")"
 # The same sources Android.bp builds.
-"$CXX" -std=c++20 -O2 -Wall -Wextra \
+if "$CXX" -std=c++20 -O2 -Wall -Wextra \
     -Wno-unused-parameter -Wno-sign-compare \
     -static-libstdc++ -static-libgcc \
     -I"$REPO_DIR/vendor/sketch" \
-    -o "$OUT" "$REPO_DIR"/vendor/sketch/sketchd/*.cpp
+    -o "$OUT" "$REPO_DIR"/vendor/sketch/sketchd/*.cpp 2>"$OUT.log"; then
+  cat "$OUT.log" >&2
+else
+  # A cross toolchain does not always carry the static libstdc++ archives.
+  log "static libstdc++ is not available for $ARCH, linking dynamically"
+  tail -5 "$OUT.log" >&2
+  "$CXX" -std=c++20 -O2 -Wall -Wextra \
+      -Wno-unused-parameter -Wno-sign-compare \
+      -I"$REPO_DIR/vendor/sketch" \
+      -o "$OUT" "$REPO_DIR"/vendor/sketch/sketchd/*.cpp
+fi
+rm -f "$OUT.log"
 
 log "built $OUT ($(du -h "$OUT" | cut -f1), $ARCH)"
 

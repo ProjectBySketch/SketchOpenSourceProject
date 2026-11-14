@@ -204,18 +204,22 @@ else
   cp -a "$LIVE/." "$KROOT"/
   cp -f /etc/resolv.conf "$KROOT/etc/resolv.conf" 2>/dev/null || true
 
-  PKG="$(chroot "$KROOT" /usr/bin/env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin \
-          apt-cache depends "$FLAVOUR" 2>/dev/null |
-          awk '/linux-image-[0-9]/{print $2; exit}')"
-  [ -n "$PKG" ] || die "could not resolve $FLAVOUR for $DEB_ARCH (does $MIRROR carry it?)"
-  log "  -> $PKG"
-
+  # The userland is packed with an empty apt cache - that is what keeps it
+  # small - so refresh the index first, then ask for the real kernel package:
+  # linux-image-<arch> is only a metapackage that points at it.
+  log "  resolving the kernel package in a scratch chroot (apt-get update)"
   if ! chroot "$KROOT" /usr/bin/env -i DEBIAN_FRONTEND=noninteractive \
-        PATH=/usr/sbin:/usr/bin:/sbin:/bin /bin/bash -c \
-        "apt-get update -qq && apt-get download $PKG" >"$WORK/apt.log" 2>&1; then
+        PATH=/usr/sbin:/usr/bin:/sbin:/bin /bin/bash -c '
+          set -e
+          apt-get update -qq
+          pkg="$(apt-cache depends "$1" | grep -o "linux-image-[0-9][^ ]*" | head -1)"
+          echo "resolving $1 -> $pkg"
+          apt-get download "$pkg"
+        ' sketch-kernel "$FLAVOUR" >"$WORK/apt.log" 2>&1; then
     tail -20 "$WORK/apt.log" >&2
-    die "could not download $PKG"
+    die "could not fetch a $DEB_ARCH kernel from $MIRROR"
   fi
+  grep 'resolving' "$WORK/apt.log" | sed 's/^/  /' || true
 
   EXTRACT="$WORK/kernel-extract"
   mkdir -p "$EXTRACT"
