@@ -25,8 +25,22 @@ die() { printf '\033[1;31m[sketch]\033[0m %s\n' "$*" >&2; exit 1; }
 [ -n "$ARCH" ] && [ -n "$OUT" ] || die "usage: $0 <amd64|arm64> <output-file>"
 
 case "$ARCH" in
-  arm64) TARGET_CC=aarch64-linux-gnu-g++ ;;
-  amd64) TARGET_CC=x86_64-linux-gnu-g++ ;;
+  arm64)
+    DEB_ARCH=arm64
+    TARGET_CC=aarch64-linux-gnu-g++
+    # The baseline arm64 instruction set, so the binary runs on every arm64 CPU
+    # and not only on the one it was built on.
+    BASELINE="-march=armv8-a -mtune=generic"
+    ;;
+  amd64)
+    DEB_ARCH=amd64
+    TARGET_CC=x86_64-linux-gnu-g++
+    # x86-64 baseline (v1) on purpose: a newer distribution defaults to v3, and
+    # a v3 binary is refused by a v2 CPU with "CPU ISA level is lower than
+    # required" - which is exactly what happens in a QEMU guest or on older
+    # hardware. This is a bootable medium, so baseline is the right default.
+    BASELINE="-march=x86-64 -mtune=generic"
+    ;;
   *) die "unknown arch '$ARCH' (use arm64 or amd64)" ;;
 esac
 
@@ -46,7 +60,7 @@ mkdir -p "$(dirname "$OUT")"
 # The same sources Android.bp builds.
 if "$CXX" -std=c++20 -O2 -Wall -Wextra \
     -Wno-unused-parameter -Wno-sign-compare \
-    -static-libstdc++ -static-libgcc \
+    $BASELINE -static-libstdc++ -static-libgcc \
     -I"$REPO_DIR/vendor/sketch" \
     -o "$OUT" "$REPO_DIR"/vendor/sketch/sketchd/*.cpp 2>"$OUT.log"; then
   cat "$OUT.log" >&2
@@ -56,6 +70,7 @@ else
   tail -5 "$OUT.log" >&2
   "$CXX" -std=c++20 -O2 -Wall -Wextra \
       -Wno-unused-parameter -Wno-sign-compare \
+      $BASELINE \
       -I"$REPO_DIR/vendor/sketch" \
       -o "$OUT" "$REPO_DIR"/vendor/sketch/sketchd/*.cpp
 fi

@@ -149,24 +149,35 @@ done
 # happened to every console and powers off. CI boots exactly this, which is how
 # the downloads on the releases page are known to work rather than assumed to.
 selftest() {
-  local out c
+  local out c real seen
   out="$(
+    failed=0
     echo "SKETCH-SELFTEST-START $(uname -srm)"
-    deb about
+    deb about || failed=1
     if [ -f /root/sketch-hello_1.0_all.deb ]; then
-      deb install /root/sketch-hello_1.0_all.deb
-      sketch-hello
-      deb list | grep sketch-hello
+      deb install /root/sketch-hello_1.0_all.deb || failed=1
+      sketch-hello || failed=1
+      deb list | grep sketch-hello || failed=1
     else
       echo "no demo package on this medium"
+      failed=1
     fi
-    echo "SKETCH-SELFTEST-OK $(uname -m)"
+    if [ "$failed" -eq 0 ]; then
+      echo "SKETCH-SELFTEST-OK $(uname -m)"
+    else
+      echo "SKETCH-SELFTEST-FAILED"
+    fi
   )" 2>&1
 
-  for c in console $(consoles); do
-    if [ -c "/dev/$c" ]; then
-      printf '%s\n' "$out" > "/dev/$c" 2>/dev/null || true
-    fi
+  # /dev/console is usually one of the consoles already, so write to each device
+  # once rather than printing the whole report twice.
+  seen=" "
+  for c in $(consoles) console; do
+    [ -c "/dev/$c" ] || continue
+    real="$(readlink -f "/dev/$c" 2>/dev/null || echo "/dev/$c")"
+    case "$seen" in *" $real "*) continue ;; esac
+    seen="$seen$real "
+    printf '%s\n' "$out" > "$real" 2>/dev/null || true
   done
   sync
   poweroff -f 2>/dev/null || reboot -f 2>/dev/null || echo o > /proc/sysrq-trigger

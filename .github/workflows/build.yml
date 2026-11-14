@@ -332,7 +332,10 @@ jobs:
           set -e
           d=dist/sketch-amd64-live
           ls -lh "$d"
-          timeout 240 qemu-system-x86_64 -m 2048 -cdrom "$d/sketch-amd64.iso" \
+          # Long enough for GRUB, the kernel and the unpacking; the medium writes
+          # its banner to the serial console within seconds, so there is nothing
+          # to gain from waiting longer than this.
+          timeout 90 qemu-system-x86_64 -m 2048 -cdrom "$d/sketch-amd64.iso" \
             -display none -monitor none -serial file:/tmp/boot-iso.log \
             -no-reboot || true
           echo "--- what the medium said ---"
