@@ -9,6 +9,7 @@
 #   ./build.sh build <arch> [var]  lunch + build (arch: arm64|amd64, var: userdebug|user)
 #   ./build.sh both                build both architectures, userdebug
 #   ./build.sh artifacts <arch>    collect images, ISO and binaries into dist/
+#   ./build.sh dist <arch>         build the runtime + bootable media into dist/
 #   ./build.sh publish <tag>       upload dist/ as a GitHub release
 #
 set -euo pipefail
@@ -80,6 +81,14 @@ cmd_artifacts() {
   bash "$REPO_DIR/scripts/make-artifacts.sh" "$arch" "$variant" "$REPO_DIR"
 }
 
+# Everything buildable without an Android tree: the runtime binary, the Debian
+# userland, a bootable initramfs, and (amd64) a live ISO and disk image, laid out
+# in dist/ for publish.
+cmd_dist() {
+  local arch="${1:-amd64}" variant="${2:-live}"
+  bash "$REPO_DIR/scripts/build-dist.sh" "$arch" "$variant"
+}
+
 cmd_publish() {
   local tag="${1:-}"
   [ -n "$tag" ] || die "usage: $0 publish <tag> [--list|--dry-run]   (e.g. $0 publish v1.0)"
@@ -108,6 +117,8 @@ SketchOpenSourceProject build driver
   ./build.sh build <arch> [var]   lunch + build (var: userdebug|user)
   ./build.sh both                 build arm64 and amd64 userdebug
   ./build.sh artifacts <arch>     collect images, live ISO and binaries into dist/
+  ./build.sh dist <arch>          build the runtime, userland and bootable media into
+                                  dist/ - no Android tree needed (arch: amd64|arm64)
   ./build.sh publish <tag>        publish one release per arch: <tag>-arm64, <tag>-amd64
                                   add --list to see what would go up, --dry-run to check
   ./build.sh run [build|userland|init|demo|deb|shell]
@@ -151,6 +162,7 @@ main() {
     build) cmd_build "${1:-arm64}" "${2:-userdebug}" ;;
     both) cmd_both ;;
     artifacts) cmd_artifacts "${1:-arm64}" "${2:-userdebug}" ;;
+    dist) cmd_dist "${1:-amd64}" "${2:-live}" ;;
     publish) cmd_publish "${1:-}" ;;
     run) shift || true; cmd_run "$@" ;;
     device) cmd_device "$@" ;;

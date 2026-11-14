@@ -6,6 +6,10 @@ vendor/sketch/rootfs/prebuilt/qemu-*-static
 # scripts/run-local.sh: a compiled sketchd and a Debian userland, on this host
 .local-run/
 
+# scripts/build-dist.sh / make-live.sh: per-arch binaries, kernels, ISO staging
+.build/
+.media/
+
 # Everything ./build.sh artifacts collects. Published as a GitHub release, never
 # committed: images are gigabytes and git is not a download server.
 dist/

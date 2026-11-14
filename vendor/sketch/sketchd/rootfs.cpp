@@ -59,6 +59,12 @@ bool BindMount(const std::string& source, const std::string& target, bool* mount
   return true;
 }
 
+// True when the userland is this very system: the live medium boots the Debian
+// userland as the root filesystem. Then there is nothing to chroot into, and
+// bind-mounting /dev onto itself would fail - so every path that would enter the
+// userland checks this first and simply runs the command where it already is.
+bool HostIsRootfs(const RootfsPaths& p) { return p.rootfs == "/"; }
+
 }  // namespace
 
 RootfsPaths DefaultPaths() {
@@ -68,7 +74,11 @@ RootfsPaths DefaultPaths() {
   // On a device it is unset and this is /data/sketch.
   const char* base = ::getenv("SKETCH_BASE");
   p.base = (base != nullptr && base[0] != '\0') ? base : "/data/sketch";
-  p.rootfs = JoinPath(p.base, "rootfs");
+  // SKETCH_ROOTFS overrides the userland itself. The live medium sets it to "/"
+  // because there the Debian userland *is* the running system, not a directory
+  // inside it - see HostIsRootfs below.
+  const char* rootfs = ::getenv("SKETCH_ROOTFS");
+  p.rootfs = (rootfs != nullptr && rootfs[0] != '\0') ? rootfs : JoinPath(p.base, "rootfs");
   p.db = JoinPath(p.base, "db");
   p.cache = JoinPath(p.base, "cache");
   p.run = JoinPath(p.base, "run");
@@ -89,6 +99,9 @@ bool EnsureDirs(const RootfsPaths& p, std::string& err) {
 }
 
 bool RootfsInstalled(const RootfsPaths& p) {
+  // On the live medium the userland is the running system, so its dpkg database
+  // is the evidence - not an etc/sketch-arch marker.
+  if (HostIsRootfs(p)) return IsDir("/var/lib/dpkg");
   return PathExists(JoinPath(p.rootfs, "etc/sketch-arch"));
 }
 
@@ -149,6 +162,8 @@ bool InstallRootfs(const RootfsPaths& p, const std::string& from, std::string& e
 
 bool EnsureRootfs(const RootfsPaths& p, std::string& err) {
   if (!EnsureDirs(p, err)) return false;
+  // Nothing to unpack when the userland is the system we are already running in.
+  if (HostIsRootfs(p)) return true;
   if (RootfsInstalled(p)) return true;
   LogInfo("no userland yet, installing it (this takes a minute the first time)");
   return InstallRootfs(p, "", err);
@@ -200,9 +215,13 @@ void ChrootMounts::Unmount() {
 int RunInChroot(const RootfsPaths& p, const std::vector<std::string>& argv) {
   if (argv.empty()) return 127;
 
+  // On the live medium the userland is this system: no chroot, no bind mounts,
+  // the command runs where it is.
+  const bool host = HostIsRootfs(p);
+
   std::string err;
   ChrootMounts mounts;
-  if (!mounts.Mount(p.rootfs, err)) {
+  if (!host && !mounts.Mount(p.rootfs, err)) {
     std::fprintf(stderr, "sketchd: %s\n", err.c_str());
     return 1;
   }
@@ -218,7 +237,7 @@ int RunInChroot(const RootfsPaths& p, const std::vector<std::string>& argv) {
     return 1;
   }
   if (pid == 0) {
-    if (::chroot(p.rootfs.c_str()) != 0) {
+    if (!host && ::chroot(p.rootfs.c_str()) != 0) {
       LogErrno("chroot " + p.rootfs);
       _exit(126);
     }

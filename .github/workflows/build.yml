@@ -1,21 +1,24 @@
 name: build
 
-# Two very different jobs, on purpose:
+# Three very different jobs, on purpose:
 #
-#   verify  - runs on GitHub's own hosted runners, on every push. It cannot build
-#             an Android image (no LineageOS tree, no 250 GiB of disk), but it
-#             does the checks that catch real mistakes: every shell script must
-#             parse, the workflow must be valid YAML, and the sketchd daemon must
-#             compile and link. That last one is the highest-risk code in the
-#             repository, and it is the one thing a hosted runner can prove.
+#   verify  - GitHub's own hosted runners, every push. It cannot build an Android
+#             image (no LineageOS tree, no 250 GiB of disk), but it does the checks
+#             that catch real mistakes: every shell script parses, the workflow is
+#             valid YAML, the makefiles point at files that exist, and sketchd
+#             compiles, links and runs the whole .deb path against a real userland.
 #
-#   sync/build/release - the real image build, which needs a machine with the
-#             LineageOS tree, ~250 GiB free and hours to spare. It only runs on
-#             a self-hosted runner, registered with:
+#   runtime - also hosted, also real output: sketchd for both architectures, the
+#             Debian userland, a bootable initramfs, and for amd64 a live ISO and
+#             a disk image. Then it BOOTS the medium in QEMU and installs a .deb
+#             inside it, so the download on the releases page is known to work.
+#             Everything it makes is published as <tag>-arm64 and <tag>-amd64.
+#
+#   sync/build/image-release - the Android image itself, which needs a machine
+#             with the LineageOS tree, ~250 GiB free and hours to spare, so it
+#             only runs on a self-hosted runner, registered with:
 #               ./config.sh --labels self-hosted,linux,aosp
-#             and it only runs when asked (Actions -> Run workflow) or on a tag,
-#             so an ordinary push never queues work nobody can serve. It ends in
-#             one GitHub release per architecture: <tag>-arm64, <tag>-amd64.
+#             and only when asked (Actions -> Run workflow) or on a tag.
 
 on:
   push:
@@ -38,6 +41,9 @@ on:
         description: "Release tag (blank: sketch-<run number>)"
         type: string
         default: ""
+
+permissions:
+  contents: write
 
 concurrency:
   group: sketch-${{ github.ref }}
@@ -219,16 +225,16 @@ jobs:
           grep -q 'rootfs-arm64'     /tmp/list.txt
           echo "ok   per-arch releases resolve correctly"
 
-      - name: An architecture with no images is refused
+      - name: An architecture with nothing in it is refused
         run: |
           set -e
-          # Start from a clean dist/: an arch directory with no .img files in it
-          # must not become a release, and with nothing else present there is
-          # nothing to publish at all.
+          # Start from a clean dist/: an arch directory with nothing publishable
+          # in it must not become a release, and with nothing else present there
+          # is nothing to publish at all.
           rm -rf dist
           mkdir -p dist/sketch-riscv64-userdebug
           if bash ./scripts/publish-release.sh v0.0-test --list > /tmp/empty.txt 2>&1; then
-            echo "::error::publisher accepted a dist/ with no images"
+            echo "::error::publisher accepted an empty dist/"
             exit 1
           fi
           cat /tmp/empty.txt
@@ -236,6 +242,152 @@ jobs:
           grep -q 'no built architectures' /tmp/empty.txt
           echo "ok   refuses to publish an empty release"
           rm -rf dist
+
+  # ------------------------------------------------- hosted, real artifacts ---
+  # Everything this project can build without an Android tree, for both
+  # architectures, plus a QEMU boot of the medium it just made. The images on the
+  # releases page come from here, so they are known to boot and to install a .deb.
+  runtime:
+    name: runtime ${{ matrix.arch }} (hosted)
+    needs: verify
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [amd64, arm64]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc 2>/dev/null || true
+          df -h /
+
+      - name: Tools
+        run: |
+          set -e
+          sudo apt-get update -qq
+          # debootstrap + cpio + dpkg-dev: the userland and the demo package.
+          # g++ and the cross compilers: sketchd for both architectures.
+          # qemu-user-static: run the other architecture's dpkg (arm64 userland).
+          # grub/xorriso/mtools/dosfstools: the ISO and the disk image.
+          # qemu-system: boot the result and prove it.
+          sudo apt-get install -y -qq \
+            debootstrap dpkg-dev cpio zip file \
+            g++ g++-aarch64-linux-gnu \
+            qemu-user-static binfmt-support \
+            grub-pc-bin grub-efi-amd64-bin grub-common xorriso mtools dosfstools \
+            qemu-system-x86 qemu-system-arm
+
+      - name: Cross-arch emulation is registered
+        run: |
+          set -e
+          if [ ! -e /proc/sys/fs/binfmt_misc/qemu-aarch64 ]; then
+            sudo update-binfmts --enable qemu-aarch64 || true
+          fi
+          ls /proc/sys/fs/binfmt_misc/ | sed 's/^/  /'
+
+      - name: Build the runtime, the userland and the media
+        run: |
+          sudo env SKETCH_REQUIRE_MEDIA=1 SKETCH_SUITE=trixie \
+            bash scripts/build-dist.sh ${{ matrix.arch }} live
+
+      # The receipt: not "it compiled", but "it booted, installed a real package
+      # and ran it". The medium ships the package it installs.
+      - name: The medium boots, installs a .deb and runs it (amd64)
+        if: matrix.arch == 'amd64'
+        run: |
+          set -e
+          d=dist/sketch-amd64-live
+          ls -lh "$d"
+          { sleep 45
+            echo
+            echo 'deb about'
+            sleep 12
+            echo 'deb install /root/sketch-hello_1.0_all.deb'
+            sleep 30
+            echo 'sketch-hello'
+            sleep 12
+            echo 'deb list | grep sketch-hello'
+            sleep 10
+            echo 'poweroff -f'
+          } | timeout 300 qemu-system-x86_64 -m 1500 -cdrom "$d/sketch-amd64.iso" \
+                -nographic -no-reboot 2>&1 | tee /tmp/boot-amd64.log || true
+
+          echo "--- what the medium said ---"
+          grep -a 'runtime   dpkg inside a Debian chroot' /tmp/boot-amd64.log
+          grep -a 'hello from a Debian package, running on the Sketch live medium' /tmp/boot-amd64.log
+          grep -a 'sketch-hello' /tmp/boot-amd64.log
+          echo "ok   the amd64 medium booted and installed a package"
+
+      - name: The medium boots, installs a .deb and runs it (arm64)
+        if: matrix.arch == 'arm64'
+        run: |
+          set -e
+          d=dist/sketch-arm64-live
+          ls -lh "$d"
+          { sleep 45
+            echo
+            echo 'deb about'
+            sleep 12
+            echo 'deb install /root/sketch-hello_1.0_all.deb'
+            sleep 30
+            echo 'sketch-hello'
+            sleep 12
+            echo 'poweroff -f'
+          } | timeout 300 qemu-system-aarch64 -M virt -cpu cortex-a57 -m 1500 \
+                -nographic -no-reboot \
+                -kernel "$d/sketch-arm64-vmlinuz" \
+                -initrd "$d/sketch-arm64-initrd.gz" 2>&1 | tee /tmp/boot-arm64.log || true
+
+          echo "--- what the medium said ---"
+          grep -a 'runtime   dpkg inside a Debian chroot' /tmp/boot-arm64.log
+          grep -a 'hello from a Debian package, running on the Sketch live medium' /tmp/boot-arm64.log
+          echo "ok   the arm64 medium booted and installed a package"
+
+      - name: Upload the artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: sketch-${{ matrix.arch }}-live
+          path: dist/
+          retention-days: 30
+
+  publish:
+    name: publish releases (hosted)
+    needs: runtime
+    if: |
+      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+      github.ref_type == 'tag' ||
+      github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Work out the release tag
+        run: |
+          if [ "${{ github.ref_type }}" = "tag" ]; then
+            echo "TAG=${{ github.ref_name }}" >> "$GITHUB_ENV"
+          elif [ -n "${{ github.event.inputs.tag }}" ]; then
+            echo "TAG=${{ github.event.inputs.tag }}" >> "$GITHUB_ENV"
+          else
+            echo "TAG=latest" >> "$GITHUB_ENV"
+          fi
+
+      - name: What would go up
+        run: bash scripts/publish-release.sh "$TAG" --list
+
+      - name: Publish one release per architecture
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: bash scripts/publish-release.sh "$TAG"
 
   # ----------------------------------------------------------- self-hosted ---
   # Sync is its own job because GitHub kills any single job at 6 hours, and
@@ -253,8 +405,10 @@ jobs:
       - name: Sync LineageOS
         run: bash ./build.sh sync
 
+  # The Android image itself: needs the LineageOS tree, ~250 GiB and hours.
+  # Everything hosted CI can prove is already proven by the `runtime` job above.
   build:
-    name: build ${{ matrix.arch }}
+    name: image ${{ matrix.arch }}
     needs: sync
     runs-on: [self-hosted, linux, aosp]
     timeout-minutes: 350
@@ -275,12 +429,12 @@ jobs:
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: sketch-${{ matrix.arch }}
+          name: image-${{ matrix.arch }}
           path: dist/
           retention-days: 14
 
-  release:
-    name: publish release
+  image-release:
+    name: publish image release
     needs: build
     if: startsWith(github.ref, 'refs/tags/') || github.event.inputs.publish == 'true'
     runs-on: [self-hosted, linux, aosp]

@@ -116,9 +116,33 @@ The `.deb` feature is not an image. It is one binary (`sketchd`) plus a Debian
 userland tarball, so it runs anywhere Linux does. No ISO, no emulator, no
 flashing, no 250 GiB build.
 
-**On any Linux machine** - this compiles the real daemon, builds a real Debian
-userland with `debootstrap`, then builds a real `.deb` with `dpkg-deb`, installs
-it, runs it inside the chroot, lists it and removes it:
+**Boot it.** `bash build.sh dist amd64` builds a medium that does not need
+Android at all: the Debian userland packed as an initramfs, with `sketchd`
+inside, wrapped in a GRUB ISO (BIOS + UEFI) and a UEFI disk image. Boot it and
+you are root in a Debian shell with `deb` on PATH. Nothing is written to a disk -
+the system lives in memory - so `deb install` works on a machine with no free
+space and no installation:
+
+```
+bash build.sh dist amd64            # -> dist/sketch-amd64-live/
+qemu-system-x86_64 -m 1G -cdrom dist/sketch-amd64-live/sketch-amd64.iso
+# or: dd if=dist/sketch-amd64-live/sketch-amd64-live.img of=/dev/sdX bs=4M
+```
+
+arm64 has no ISO route here (GRUB cannot make one), so it ships the pair:
+`sketch-arm64-vmlinuz` and `sketch-arm64-initrd.gz`, which any arm64 kernel can
+boot:
+
+```
+qemu-system-aarch64 -M virt -cpu cortex-a57 -m 1500 -nographic \
+  -kernel dist/sketch-arm64-live/sketch-arm64-vmlinuz \
+  -initrd dist/sketch-arm64-live/sketch-arm64-initrd.gz
+```
+
+**On any Linux machine**, without booting anything - this compiles the real
+daemon, builds a real Debian userland with `debootstrap`, then builds a real
+`.deb` with `dpkg-deb`, installs it, runs it inside the chroot, lists it and
+removes it:
 
 ```
 bash scripts/run-local.sh build      # compile sketchd
@@ -160,51 +184,50 @@ image - debloated, with `deb` on `PATH` out of the box. That still needs
 
 AOSP-class images cannot be compiled on a phone, and an image set is gigabytes:
 the images, the ISO and the binaries are **build outputs, not source**, so they
-live on the repository's **Releases** page rather than in git. Two ways to fill
-it:
+live on the repository's **Releases** page rather than in git.
 
-**On your own Linux machine:**
+**CI builds and publishes them, on GitHub's own runners.** The `runtime` job
+needs no LineageOS tree: it compiles `sketchd` for **amd64** and **arm64**,
+builds the Debian userland for both (arm64 through qemu-user), assembles the
+bootable media, then **boots it in QEMU and installs a `.deb` inside it** before
+publishing. One release per architecture:
+
+- `latest-arm64` (or `v1.0-arm64` for a tag) - `sketchd-arm64`,
+  `rootfs-arm64.tar.gz`, `sketch-arm64-vmlinuz`, `sketch-arm64-initrd.gz`
+- `latest-amd64` - the same, plus `sketch-amd64.iso` and `sketch-amd64-live.img`
+
+Every asset is checked by the job that made it: the boot test asserts that the
+medium reaches a shell, runs `deb about`, installs the package it ships and runs
+it. A release is only made when that passed.
+
+**On your own Linux machine**, the same thing, plus the Android images if you
+have the tree:
 
 ```
 bash build.sh env && bash build.sh sync
 bash build.sh rootfs both
+bash build.sh dist amd64 && bash build.sh dist arm64   # runtime + bootable media
 bash build.sh build arm64 && bash build.sh artifacts arm64
 bash build.sh build amd64 && bash build.sh artifacts amd64
 bash build.sh publish v1.0 --list     # see exactly what would go up
 bash build.sh publish v1.0            # needs `gh auth login`
 ```
 
-**Each architecture gets its own release**, so a download is never ambiguous:
-
-- `v1.0-arm64` - `sketch-arm64-userdebug.zip`, `sketchd-arm64`,
-  `rootfs-arm64.tar.gz` and the raw `*.img` files
-- `v1.0-amd64` - `sketch-amd64-userdebug.zip`, `sketch-amd64.iso`,
-  `sketchd-amd64`, `rootfs-amd64.tar.gz` and the raw `*.img` files
-
-An architecture is only published when `dist/` really holds its images - a
-missing build is an error, never an empty release. `--list` prints what each
+`dist/` may hold both an image build and a runtime build for one architecture;
+they are merged into that architecture's release, and an architecture with
+nothing in it is an error, never an empty release. `--list` prints what each
 release would carry; `--dry-run` does everything except upload.
 
-**Through GitHub Actions**, which does the same thing on a machine of yours.
-The workflow has two halves:
-
-- **`verify` runs on GitHub's own hosted runners, free, on every push.** It
-  cannot build an image, but it checks the things that actually break: every
-  shell script parses, the workflow YAML is valid, the makefiles and
-  `Android.bp` point at files that exist, and **the `sketchd` daemon compiles,
-  links and runs**. That is the highest-risk code here, so it is worth having on
-  every commit.
-- **`sync` -> `build` -> `release` is the real image build**, on a
-  **self-hosted** runner, because a hosted one has neither the disk nor the
-  hours. It only runs when you ask (*Actions -> build -> Run workflow*) or when
-  you push a tag, so an ordinary push never queues work nobody can serve:
+**The Android image stays self-hosted.** `sync` -> `build` -> `image-release`
+needs a machine with the LineageOS tree, ~250 GiB free and hours to spare, so it
+only runs on a self-hosted runner, and only when asked (*Actions -> build -> Run
+workflow*, tick `publish`) or on a tag:
 
 ```
 # on the build machine, once
 ./config.sh --labels self-hosted,linux,aosp
 ```
 
-Then *Actions -> build -> Run workflow*, tick `publish`, and the releases appear.
 Each `dist/sketch-<arch>-<variant>/` holds:
 
 - `*.img` - every image the build made (system, boot, system_ext, super, ...)
@@ -218,8 +241,11 @@ Assets over GitHub's 2 GiB limit are split into `.partNN` pieces; join them with
 
 ## Layout
 
-- `build.sh` - the driver: `env`, `sync`, `rootfs`, `build`, `both`, `artifacts`, `publish`, `run`, `device`
+- `build.sh` - the driver: `env`, `sync`, `rootfs`, `build`, `both`, `artifacts`, `dist`, `publish`, `run`, `device`
 - `scripts/` - host checks, LineageOS sync, vendor link, userland, artifacts, release
+- `scripts/build-dist.sh` - the runtime, the userland and the bootable media into `dist/`, no Android tree
+- `scripts/build-runtime.sh` - `sketchd` for amd64 and arm64 (native or cross)
+- `scripts/make-live.sh` - the bootable ISO, UEFI disk image and initramfs
 - `scripts/run-local.sh` - run the `.deb` runtime here, no image needed
 - `scripts/install-onto-device.sh` - push it onto an already-rooted phone
 - `scripts/publish-release.sh` - one GitHub release per architecture
@@ -235,6 +261,10 @@ Assets over GitHub's 2 GiB limit are split into `.partNN` pieces; join them with
 
 The `.deb` runtime is compiled, linked and exercised end to end by CI on every
 push: a real Debian userland, a real `.deb`, installed, run, listed and removed.
+Hosted CI also builds the bootable media for **amd64 and arm64**, boots it in
+QEMU, installs a `.deb` from inside it and runs the result - and publishes it to
+the Releases page, one release per architecture.
+
 What has *not* been built is the Android image itself - there is no LineageOS
 tree on the device this was authored on, so the first `bash build.sh sync` /
 `bash build.sh build` is where the image gets proven. The SELinux policy is

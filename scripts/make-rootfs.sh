@@ -19,8 +19,8 @@ WORK="${SKETCH_WORKDIR:-$REPO_DIR/.rootfs-build}"
 OUT="$REPO_DIR/vendor/sketch/rootfs/prebuilt"
 
 case "$ARCH" in
-  arm64) DEB_ARrm64; DEB_QEMU=aarch64 ;;
-  amd64) DEB_ARmd64; DEB_QEMU=x86_64 ;;
+  arm64) DEB_ARCH=arm64; DEB_QEMU=aarch64 ;;
+  amd64) DEB_ARCH=amd64; DEB_QEMU=x86_64 ;;
   *) echo "usage: $0 <arm64|amd64> [repo-dir]" >&2; exit 1 ;;
 esac
 
@@ -34,6 +34,19 @@ if [ "$(id -u)" -ne 0 ]; then
 fi
 
 command -v debootstrap >/dev/null 2>&1 || { echo "debootstrap missing: sudo apt install debootstrap" >&2; exit 1; }
+
+# debootstrap on an older distribution may not carry a script for the newest
+# Debian suite. Fall back to one it does know rather than failing halfway
+# through - the userland is minimal either way.
+if [ ! -e "/usr/share/debootstrap/scripts/$SUITE" ]; then
+  for fallback in bookworm stable; do
+    if [ -e "/usr/share/debootstrap/scripts/$fallback" ]; then
+      log "debootstrap has no '$SUITE' script here, using '$fallback'"
+      SUITE="$fallback"
+      break
+    fi
+  done
+fi
 
 HOST_DEB_ARCH="$(dpkg --print-architecture 2>/dev/null || echo unknown)"
 if [ "$HOST_DEB_ARCH" != "$DEB_ARCH" ]; then
@@ -55,6 +68,15 @@ log "debootstrap $SUITE/$DEB_ARCH (minbase)"
 $SUDO debootstrap --arch="$DEB_ARCH" --variant=minbase --components=main \
   --include=dpkg,apt,bash,coreutils,tar,gzip,xz-utils,zstd,ca-certificates \
   "$SUITE" "$ROOT" "$MIRROR"
+
+# Belt and braces for a cross build: a binfmt_misc entry registered with the F
+# flag makes the kernel hold the interpreter open, but one registered without it
+# is resolved inside the chroot instead - so put a copy where it would look.
+if [ "$HOST_DEB_ARCH" != "$DEB_ARCH" ] && [ -x "/usr/bin/qemu-$DEB_QEMU-static" ]; then
+  log "installing /usr/bin/qemu-$DEB_QEMU-static inside the userland"
+  $SUDO mkdir -p "$ROOT/usr/bin"
+  $SUDO cp -f "/usr/bin/qemu-$DEB_QEMU-static" "$ROOT/usr/bin/"
+fi
 
 log "configuring the userland"
 $SUDO cp /etc/resolv.conf "$ROOT/etc/resolv.conf"
