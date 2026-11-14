@@ -269,25 +269,52 @@ jobs:
         run: |
           set -e
           sudo apt-get update -qq
-          # debootstrap + cpio + dpkg-dev: the userland and the demo package.
-          # g++ and the cross compilers: sketchd for both architectures.
-          # qemu-user-static: run the other architecture's dpkg (arm64 userland).
-          # grub/xorriso/mtools/dosfstools: the ISO and the disk image.
-          # qemu-system: boot the result and prove it.
+          # These must exist: debootstrap and cpio make the userland and the
+          # initramfs, the compilers build sketchd for both arches, and
+          # grub/xorriso/mtools/dosfstools make the ISO and the disk image.
           sudo apt-get install -y -qq \
             debootstrap dpkg-dev cpio zip file \
             g++ g++-aarch64-linux-gnu \
-            qemu-user-static binfmt-support \
-            grub-pc-bin grub-efi-amd64-bin grub-common xorriso mtools dosfstools \
-            qemu-system-x86 qemu-system-arm
+            grub-pc-bin grub-efi-amd64-bin xorriso mtools dosfstools
+          # The emulators and the qemu-user package names move between Ubuntu
+          # releases (qemu-user-static is not on every one), so take what is
+          # there and say what was not, instead of failing the whole step.
+          for p in qemu-system-x86 qemu-system-arm qemu-user-static qemu-user-binfmt qemu-user binfmt-support; do
+            if sudo apt-get install -y -qq "$p" >/dev/null 2>&1; then
+              echo "installed      $p"
+            else
+              echo "not available  $p"
+            fi
+          done
+          echo "--- emulators ---"
+          ls -l /usr/bin/qemu-system-x86_64 /usr/bin/qemu-system-aarch64 /usr/bin/qemu-aarch64* 2>/dev/null || true
 
       - name: Cross-arch emulation is registered
         run: |
           set -e
-          if [ ! -e /proc/sys/fs/binfmt_misc/qemu-aarch64 ]; then
-            sudo update-binfmts --enable qemu-aarch64 || true
+          echo "--- binfmt entries before ---"
+          ls /proc/sys/fs/binfmt_misc/ | sed 's/^/  /' || true
+
+          # Only the arm64 leg needs this on an amd64 runner: it is how dpkg for
+          # arm64 runs inside its own chroot.
+          if [ "${{ matrix.arch }}" = "arm64" ] && [ ! -e /proc/sys/fs/binfmt_misc/qemu-aarch64 ]; then
+            # The package-based route first, then the container one, which does
+            # not depend on which package names this Ubuntu release kept.
+            sudo update-binfmts --enable qemu-aarch64 2>/dev/null || true
+            if [ ! -e /proc/sys/fs/binfmt_misc/qemu-aarch64 ] && command -v docker >/dev/null 2>&1; then
+              echo "--- asking tonistiigi/binfmt for arm64 ---"
+              docker run --privileged --rm tonistiigi/binfmt --install arm64 || true
+            fi
           fi
-          ls /proc/sys/fs/binfmt_misc/ | sed 's/^/  /'
+
+          echo "--- binfmt entries after ---"
+          ls /proc/sys/fs/binfmt_misc/ | sed 's/^/  /' || true
+          if [ "${{ matrix.arch }}" = "arm64" ]; then
+            test -e /proc/sys/fs/binfmt_misc/qemu-aarch64 || {
+              echo "::error::no arm64 binfmt handler: the arm64 userland cannot be built here"
+              exit 1
+            }
+          fi
 
       - name: Build the runtime, the userland and the media
         run: |
